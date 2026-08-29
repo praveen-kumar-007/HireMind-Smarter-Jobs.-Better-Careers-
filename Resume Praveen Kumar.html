@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume - Praveen Kumar</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Lato:wght=300;400;700&family=Roboto:wght=400;700&display=swap');
+
+        /* --- Professional & Colorful Palette --- */
+        :root {
+            --primary-dark: #2c3e50;
+            /* Charcoal */
+            --primary-blue: #2980b9;
+            /* Sapphire Blue */
+            --accent-teal: #16a085;
+            /* Deep Teal */
+            --light-gray: #ecf0f1;
+            /* Silver */
+            --text-dark: #333;
+            --text-light: #555;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Lato', sans-serif;
+            margin: 0;
+            padding: 10px 0;
+            background-color: #f3f5f7;
+            color: var(--text-dark);
+            font-size: 8.5pt;
+            line-height: 1.4;
+        }
+
+
+
+        ::selection {
+            background: rgba(41, 128, 185, 0.2);
+            color: var(--text-dark);
+        }
+
+        .container {
+            width: min(210mm, calc(100vw - 24px));
+            min-height: 297mm;
+            margin: 0 auto;
+            background: #fff;
+            padding: 12mm 14mm;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.06);
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--light-gray);
+            margin-bottom: 12px;
+            gap: 18px;
+        }
+
+        .profile-photo {
+            width: 115px;
+            height: 115px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            border: 2px solid #d2d6de;
+            padding: 4px;
+            box-sizing: border-box;
+            background-color: transparent;
+        }
+
+        .profile-photo img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .header-text {
+            text-align: center;
+            flex-grow: 1;
+            margin-right: 135px;
+            /* Visual balance offset to account for the left-side photo width + gap */
+        }
+
+        .header h1 {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            font-size: 2.45em;
+            font-weight: 800;
+            color: var(--primary-dark);
+            letter-spacing: 1px;
+            line-height: 1.08;
+        }
+
+        .header-subtitle {
+            font-family: 'Lato', sans-serif;
+            margin-top: 6px;
+            font-size: 1.04em;
+            color: var(--text-light);
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        .header .contact-info {
+            font-size: 8.7pt;
+            color: var(--text-light);
+            margin-top: 8px;
+            line-height: 1.6;
+            width: 100%;
+        }
+
+        .links-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            /* Forces total layout row containment on download */
+            width: 100%;
+        }
+
+        .contact-item {
+            display: inline-block;
+            white-space: nowrap;
+        }
+
+        .header .contact-info a {
+            color: var(--accent-teal);
+            font-weight: bold;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .header .contact-info a:hover {
+            color: var(--primary-blue);
+            text-decoration: underline;
+        }
+
+        h3 {
+            font-family: 'Roboto', sans-serif;
+            font-size: 1.12em;
+            font-weight: 700;
+            color: var(--primary-dark);
+            border-bottom: 2px solid var(--accent-teal);
+            padding-bottom: 4px;
+            margin-top: 12px;
+            margin-bottom: 7px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .section p {
+            font-size: 0.96em;
+            text-align: justify;
+            margin: 6px 0;
+        }
+
+        .skills-inline {
+            font-size: 0.95em;
+            margin-top: 6px;
+            text-align: left;
+        }
+
+        .competencies-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 6px;
+            margin-top: 10px;
+            padding-left: 0;
+        }
+
+        .competency {
+            background-color: var(--light-gray);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            text-align: center;
+            font-weight: 500;
+            border-left: 3px solid var(--primary-blue);
+        }
+
+        .entry {
+            margin-bottom: 8px;
+        }
+
+        .entry-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: baseline;
+            margin-bottom: 2px;
+        }
+
+        .entry-title {
+            font-size: 1.02em;
+            font-weight: 700;
+            color: var(--primary-blue);
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .entry-subheader {
+            font-size: 0.96em;
+            font-style: italic;
+            font-weight: bold;
+            color: #444;
+            margin: 0;
+        }
+
+        .entry-meta {
+            font-size: 0.9em;
+            color: var(--text-light);
+            font-weight: bold;
+            flex-shrink: 0;
+            padding-left: 10px;
+        }
+
+        .entry ul {
+            list-style: none;
+            padding-left: 0;
+            margin-top: 4px;
+            margin-bottom: 4px;
+        }
+
+        .entry li {
+            padding-left: 15px;
+            position: relative;
+            margin-bottom: 3px;
+        }
+
+        .entry li::before {
+            content: '›';
+            position: absolute;
+            left: 4px;
+            top: -2px;
+            font-size: 1.3em;
+            color: var(--accent-teal);
+            font-weight: bold;
+        }
+
+        .project-link {
+            color: var(--accent-teal);
+            font-weight: bold;
+            text-decoration: none;
+            font-size: 0.85em;
+            vertical-align: middle;
+            margin-left: 10px;
+        }
+
+        .project-link:hover {
+            text-decoration: underline;
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+
+        .achievement-education-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .achievement-education-row .section {
+            margin: 0;
+            min-width: 0;
+        }
+
+        .achievement-education-row .entry {
+            min-width: 0;
+        }
+
+        .cert-list,
+        .lang-list,
+        .achievement-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .cert-list li,
+        .lang-list li,
+        .achievement-list li {
+            font-size: 0.95em;
+            margin-bottom: 5px;
+        }
+
+        .cert-issuer {
+            font-style: italic;
+            color: var(--text-light);
+        }
+
+        .download-btn-wrapper {
+            text-align: center;
+            padding: 15px 0;
+            background-color: #f8f9fa;
+        }
+
+        #download-btn {
+            display: inline-block;
+            background-color: var(--primary-dark);
+            color: #fff;
+            padding: 10px 22px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.3s, box-shadow 0.3s;
+            text-decoration: none;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        #download-btn:hover {
+            background-color: var(--accent-teal);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .page-break {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 22px;
+            margin: 12px 0 14px;
+            position: relative;
+            page-break-after: always;
+            break-after: page;
+        }
+
+        .page-break::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            border-top: 2px dashed rgba(22, 160, 133, 0.7);
+        }
+
+        .page-break span {
+            position: relative;
+            z-index: 1;
+            background: #fff;
+            padding: 0 10px;
+            font-size: 0.7em;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--accent-teal);
+        }
+
+        .projects-section {
+            page-break-before: always;
+            break-before: page;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        @media print {
+
+            html,
+            body {
+                width: 210mm;
+                min-height: 297mm;
+                background-color: #fff;
+                font-size: 9pt;
+                margin: 0;
+                padding: 0;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .container {
+                box-shadow: none;
+                margin: 0;
+                padding: 8mm 11mm;
+                max-width: none;
+                min-height: 297mm;
+                width: 210mm;
+                box-sizing: border-box;
+            }
+
+            .header h1 {
+                font-size: 2.4em;
+            }
+
+            .header-subtitle {
+                font-size: 1.05em;
+            }
+
+            .section p,
+            .entry li,
+            .competency,
+            .cert-list li,
+            .lang-list li {
+                font-size: 1em;
+            }
+
+            .download-btn-wrapper {
+                display: none;
+            }
+
+            .page-break {
+                display: none !important;
+            }
+
+            .projects-section {
+                padding-top: 15mm;
+            }
+
+            .section,
+            .entry {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            .header-text {
+                margin-right: 135px !important;
+            }
+
+            .links-row {
+                display: flex !important;
+                white-space: nowrap !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="download-btn-wrapper">
+        <button id="download-btn">Download as PDF</button>
+    </div>
+
+    <div id="resume" class="container">
+        <header class="header">
+            <div class="profile-photo">
+                <img src="https://res.cloudinary.com/mne6vzev/image/upload/v1787383326/avatars/IBPS_uwuvf7.jpg"
+                    alt="Praveen Kumar">
+            </div>
+            <div class="header-text">
+                <h1>PRAVEEN KUMAR</h1>
+                <div class="header-subtitle">Machine Learning And Full Stack Developer</div>
+                <div class="contact-info">
+                    <div class="contact-item">Dhanbad, 826001</div> •
+                    <div class="contact-item">+91 9504904499</div> •
+                    <div class="contact-item"><a href="mailto:praveen.pr105@gmail.com">praveen.pr105@gmail.com</a></div>
+                    <br />
+                    <div class="links-row">
+                        <div class="contact-item"><a href="https://praveen105.netlify.app/"
+                                target="_blank"><strong>Portfolio:</strong> praveen105.netlify.app</a></div> •
+                        <div class="contact-item"><a href="https://www.linkedin.com/in/praveen105"
+                                target="_blank"><strong>LinkedIn:</strong> praveen105</a></div> •
+                        <div class="contact-item"><a href="https://github.com/praveen-kumar-007"
+                                target="_blank"><strong>GitHub:</strong> praveen-kumar-007</a></div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="section">
+                <h3>Career Objective</h3>
+                <p>
+                    A passionate and self-driven learner with a deep interest in development and technology.
+                    Continuously building skills through hands-on projects and real-world problem solving. Committed to
+                    delivering high-quality results, adapting quickly to new challenges, and contributing meaningfully
+                    to team goals in a fast-paced tech environment.
+                </p>
+            </div>
+
+            <div class="section">
+                <h3>Skills & Core Competencies</h3>
+                <p class="skills-inline">
+                    Skills: Python, Pandas, NumPy, Scikit-learn, TensorFlow, Keras, OpenCV, Machine Learning, Deep
+                    Learning, Data Analysis, Data Visualization, CNN, Image Classification, React JS, Node JS, HTML,
+                    CSS, JavaScript, SQL, Database Management, Google Cloud, Git, GitHub, Problem-Solving
+                </p>
+                <div class="competencies-grid">
+                    <div class="competency">Machine Learning & Deep Learning</div>
+                    <div class="competency">Python (Pandas, NumPy, Scikit-learn)</div>
+                    <div class="competency">TensorFlow, Keras & OpenCV</div>
+                    <div class="competency">Data Analysis & Visualization</div>
+                    <div class="competency">CNN & Image Classification</div>
+                    <div class="competency">Full Stack Development</div>
+                    <div class="competency">React JS, Node JS</div>
+                    <div class="competency">Web Development (HTML, CSS, JS)</div>
+                    <div class="competency">SQL & Database Management</div>
+                    <div class="competency">Google Cloud Computing</div>
+                    <div class="competency">Git & GitHub Version Control</div>
+                    <div class="competency">Problem-Solving</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Experience</h3>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div>
+                            <div class="entry-title">Full Stack Developer (Freelance)</div>
+                            <div class="entry-subheader">Multimarg Private Limited | Remote</div>
+                        </div>
+                        <div class="entry-meta">Jun 2026 - Aug 2026</div>
+                    </div>
+                    <ul>
+                        <li>Architected and developed a comprehensive full-stack logistics platform, designing robust
+                            RESTful APIs to handle complex booking, billing, and carrier coordination workflows.</li>
+                        <li>Engineered a secure Role-Based Access Control (RBAC) architecture using JWT authentication,
+                            enforcing strict data isolation and governance across admin, finance, and logistics modules.
+                        </li>
+                        <li>Optimized application performance and database schemas, ensuring scalable and seamless data
+                            flow for enterprise operations.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div>
+                            <div class="entry-title">IIT ISM Dhanbad - AI/ML Intern</div>
+                            <div class="entry-subheader">Dhanbad, India</div>
+                        </div>
+                        <div class="entry-meta">Dec 2025 - Jan 2026</div>
+                    </div>
+                    <ul>
+                        <li>Researched methane gas detection in coal mining environments using sequence models and
+                            hybrid CNN-LSTM architectures.</li>
+                        <li>Designed and compared LSTM, GRU, Bidirectional LSTM, and CNN-LSTM models for methane
+                            detection.</li>
+                        <li>Implemented sensor preprocessing pipelines and handled noisy time-series data for early
+                            warning signals.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div>
+                            <div class="entry-title">IIT BHU - AI/ML Intern</div>
+                            <div class="entry-subheader">Varanasi, India</div>
+                        </div>
+                        <div class="entry-meta">Jun - Jul 2025</div>
+                    </div>
+                    <ul>
+                        <li>Developed a machine learning model for predicting energy consumption in smart buildings.
+                        </li>
+                        <li>Worked under the mentorship of Dr. Vinayak Srivastava, focusing on sustainable tech
+                            solutions.</li>
+                        <li>Applied advanced data handling and preprocessing techniques for performance analysis.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div>
+                            <div class="entry-title">AI and Data Analytics Intern</div>
+                            <div class="entry-subheader">AICTE, Shell & Edunet Foundation | Virtual</div>
+                        </div>
+                        <div class="entry-meta">Jul - Aug 2025</div>
+                    </div>
+                    <ul>
+                        <li>Completed the Skills4Future Program focused on AI, Data Analytics, and Green Skills.</li>
+                        <li>Gained hands-on experience with data-driven techniques and applied analytics to
+                            sustainability-related challenges.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div>
+                            <div class="entry-title">Machine Learning Intern</div>
+                            <div class="entry-subheader">Encryptix | Remote</div>
+                        </div>
+                        <div class="entry-meta">Aug - Sep 2024</div>
+                    </div>
+                    <ul>
+                        <li>Gained hands-on experience in applying machine learning concepts from development to
+                            deployment.</li>
+                        <li>Contributed to team projects, demonstrating strong analytical and problem-solving skills.
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <br />
+            <div class="page-break" aria-label="Page break"><span>Page Break</span></div>
+
+            <div class="section projects-section">
+                <h3>Projects</h3>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div class="entry-title">Multimarg Logistics Platform<a href="https://multimarg.com/"
+                                target="_blank" class="project-link">[Live Site]</a></div>
+                    </div>
+                    <ul>
+                        <li>Built a scalable B2B logistics application, focusing on modular component design, responsive
+                            UI/UX, and robust backend architecture.</li>
+                        <li>Implemented secure Identity and Access Management (IAM) with token-based authentication to
+                            manage granular permissions across varying operational roles.</li>
+                        <li>Developed dynamic administrative dashboards utilizing advanced state management for
+                            efficient data visualization and centralized service tracking.</li>
+                        <li>Technologies: React, Node.js, Express.js, MongoDB, RESTful APIs, JWT.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div class="entry-title">Methane Detection in Coal Mining</div>
+                    </div>
+                    <ul>
+                        <li>Developed a system for gas detection and early warning during an internship at IIT (ISM)
+                            Dhanbad.</li>
+                        <li>Utilized sequence models (LSTM, GRU, Bi-LSTM) and CNN-LSTM for anomaly detection in sensor
+                            data.</li>
+                        <li>Technologies: Python, TensorFlow, Keras, Pandas.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div class="entry-title">Brain Tumor Detection Model</div>
+                    </div>
+                    <ul>
+                        <li>Developed a CNN-based model to classify MRI brain scans for tumor detection with high
+                            accuracy.</li>
+                        <li>Involved image preprocessing, custom CNN architecture design, and model evaluation.</li>
+                        <li>Technologies: Python, TensorFlow, Keras, OpenCV.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div class="entry-title">Energy Consumption Prediction</div>
+                    </div>
+                    <ul>
+                        <li>Built an ML model to predict energy usage in residential smart buildings during an IIT BHU
+                            internship.</li>
+                        <li>Involved time-series analysis, feature engineering, and regression model comparison.</li>
+                        <li>Technologies: Python, Scikit-learn, Pandas.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div class="entry-title">SP Kabaddi - Club Website<a href="http://spkabaddi.me" target="_blank"
+                                class="project-link">[Live Site]</a></div>
+                    </div>
+                    <ul>
+                        <li>Built the production website for SP Kabaddi Group, featuring news, player registration, and
+                            an admin dashboard.</li>
+                        <li>Implemented an in-built player ID card generation feature and Cloudinary integration.</li>
+                        <li>Technologies: React, JSS, Vite, Node.js, MongoDB.</li>
+                    </ul>
+                </div>
+                <div class="entry">
+                    <div class="entry-header">
+                        <div class="entry-title">Dhanbad District Kabaddi Association Website<a
+                                href="https://dhanbadkabaddiassociation.tech/" target="_blank"
+                                class="project-link">[Live Site]</a></div>
+                    </div>
+                    <ul>
+                        <li>Developed the official governing body website for kabaddi in Dhanbad.</li>
+                        <li>Features super-admin/admin roles, content management, registration workflows, and ID card
+                            generation.</li>
+                        <li>Technologies: React, JSS, Vite, Node.js, MongoDB.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="achievement-education-row">
+                <div class="section">
+                    <h3>Education</h3>
+                    <div class="entry">
+                        <div class="entry-header">
+                            <div class="entry-title">Bachelor of Technology in Computer Science</div>
+                            <div class="entry-meta">2022 – 2026 | 8.5 CGPA</div>
+                        </div>
+                        <div class="entry-subheader">Swami Vivekananda University | Kolkata, West Bengal</div>
+                    </div>
+                    <div class="entry">
+                        <div class="entry-header">
+                            <div class="entry-title">Intermediate (12th Science)</div>
+                            <div class="entry-meta">2022 | 79%</div>
+                        </div>
+                        <div class="entry-subheader">JLSM DAV College Bhaga | Dhanbad</div>
+                    </div>
+                    <div class="entry">
+                        <div class="entry-header">
+                            <div class="entry-title">Matriculation (10th)</div>
+                            <div class="entry-meta">2020 | 78%</div>
+                        </div>
+                        <div class="entry-subheader">Rajkamal Saraswati Vidya Mandir | Dhanbad</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Achievements</h3>
+                    <ul class="achievement-list">
+                        <li><strong>2nd Position</strong>, IBM Full Stack Training Final Project Competition (College
+                            Level)</li>
+                        <li><strong>Jharkhand State Kabaddi Winner</strong></li>
+                        <li><strong>Dhanbad District Kabaddi Referee</strong></li>
+                        <li><strong>Media Incharge</strong>, Dhanbad District Kabaddi Association</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="grid-container">
+                <div class="section">
+                    <h3>Certifications</h3>
+                    <ul class="cert-list">
+                        <li><strong>Full Stack Development</strong> - <span class="cert-issuer">IBM</span></li>
+                        <li><strong>Introduction to Machine Learning</strong> - <span class="cert-issuer">NPTEL</span>
+                        </li>
+                        <li><strong>ML with Python</strong> - <span class="cert-issuer">FreeCodeCamp</span></li>
+                        <li><strong>Artificial Intelligence Primer</strong> - <span class="cert-issuer">Infosys</span>
+                        </li>
+                        <li><strong>Getting Started with AI</strong> - <span class="cert-issuer">IBM SkillsBuild</span>
+                        </li>
+                        <li><strong>Google Cloud Computing</strong> - <span class="cert-issuer">NPTEL</span></li>
+                        <li><strong>Implementation of Algorithms</strong> - <span class="cert-issuer">Ardent</span></li>
+                        <!-- <li><strong>Python</strong> - <span class="cert-issuer">HackerRank</span></li>
+                        <li><strong>SQL</strong> - <span class="cert-issuer">OneRoadMap</span></li> -->
+                    </ul>
+
+                </div>
+                <div class="section">
+                    <h3>Languages</h3>
+                    <ul class="lang-list">
+                        <li>English</li>
+                        <li>Hindi</li>
+                        <li>Bangla</li>
+                    </ul>
+                    <h3>Hobbies</h3>
+                    <ul class="lang-list">
+                        <li>Writing poems (Hindi)</li>
+                        <li>Playing Kabaddi</li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.getElementById('download-btn').addEventListener('click', function () {
+            window.print();
+        });
+    </script>
+
+</body>
+
+</html>

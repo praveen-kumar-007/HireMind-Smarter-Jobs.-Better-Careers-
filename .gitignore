@@ -1,0 +1,54 @@
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# Python Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+
+# Node.js dependencies & builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# Python compiled files & caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.oxlintrc.json
+
+# Local logs & Telemetry
+*.log
+logs/
+backend/app/static/*.log
+backend/app/static/browser_profile*/
+
+# Generated Uploads & Resumes
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/app/static/resumes/*.pdf
+backend/faiss_indexes/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# IDEs & Editors
+.vscode/
+.idea/
+
+# Agent/AI platform workspace directories (temporary agent system logs)
+.tempmediaStorage/
+brain/
