@@ -2,8 +2,13 @@
 .env
 .env.*
 *.env
+.env.production
+.env.*.production
+*.env.production
 **/.env
 **/.env.*
+**/.env.production
+**/.env.*.production
 !**/.env.example
 !**/.env.*.example
 
