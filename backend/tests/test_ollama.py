@@ -23,10 +23,17 @@ def test_json_extraction():
     with pytest.raises(ValueError):
         extract_json_from_text("Invalid text with no JSON braces.")
 
+@patch('requests.get')
 @patch.object(ai_service, '_call_nvidia_api', return_value="pong")
 @patch.object(ai_service.ollama_client, 'list')
-def test_ollama_health_connected(mock_list, mock_nvidia):
+def test_ollama_health_connected(mock_list, mock_nvidia, mock_get):
     """Test health check route response when Ollama is online."""
+    mock_get.return_value = MagicMock(status_code=200, json=lambda: {
+        "models": [
+            {"name": "qwen3:4b:latest"},
+            {"name": "qwen3:8b:latest"}
+        ]
+    })
     mock_list.return_value = {
         "models": [
             {"name": "qwen3:4b:latest"},
@@ -37,15 +44,18 @@ def test_ollama_health_connected(mock_list, mock_nvidia):
     response = get_ai_health()
     assert response["status"] == "ONLINE"
     assert response["ollama"]["online"] is True
+    assert response["local"]["ollama_online"] is True
 
+@patch('requests.get', side_effect=Exception("Connection refused"))
 @patch.object(ai_service, '_call_nvidia_api', side_effect=Exception("API offline"))
 @patch.object(ai_service.ollama_client, 'list')
-def test_ollama_health_offline(mock_list, mock_nvidia):
-    """Test health check route response when Ollama and NVIDIA are offline."""
+def test_ollama_health_offline(mock_list, mock_nvidia, mock_get):
+    """Test health check route response when Ollama is offline."""
     mock_list.side_effect = ConnectionError("Connection refused")
     
     response = get_ai_health()
     assert response["ollama"]["online"] is False
+    assert response["local"]["ollama_online"] is False
 
 @patch('requests.post')
 @patch('ollama.Client.chat')

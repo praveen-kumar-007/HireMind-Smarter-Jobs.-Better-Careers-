@@ -49,26 +49,26 @@ def get_jobs(
         else:
             scan_keywords = user_target_roles if user_target_roles else ["Software Developer", "Python Developer", "Full Stack Developer"]
             
-        loc = location if location is not None else (profile.location if profile and profile.location else "")
+        # Default to India if the user's profile location is Dhanbad and no location is selected, 
+        # as the user wants popular IT hubs/Worldwide instead of Dhanbad.
+        loc = location
+        if not loc or loc.strip() == "":
+            if profile and profile.location and "dhanbad" not in profile.location.lower():
+                loc = profile.location
+            else:
+                loc = "India"
         
         # Parallelize keyword discovery for maximum execution speed
-        import concurrent.futures
         transient_jobs = []
-        
-        def discover_jobs_thread(kw):
+        for kw in scan_keywords[:1]:
             try:
-                # Run provider crawlers with save_to_db=False to keep threads read-only and lock-free
-                return job_discovery_service.discover_and_save_jobs(
+                res = job_discovery_service.discover_and_save_jobs(
                     db, query=kw, location=loc, user_id=current_user.id, save_to_db=False
                 )
+                if res:
+                    transient_jobs.extend(res)
             except Exception as e:
-                logger.error(f"Thread discovery error for '{kw}': {e}")
-                return []
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(scan_keywords[:2])) as executor:
-            futures = [executor.submit(discover_jobs_thread, kw) for kw in scan_keywords[:2]]
-            for future in concurrent.futures.as_completed(futures):
-                transient_jobs.extend(future.result() or [])
+                logger.error(f"Discovery error for '{kw}': {e}")
                 
         # Deduplicate transient scanned jobs
         seen_keys = set()
@@ -143,9 +143,9 @@ def get_jobs(
                 
         return db_jobs[:100]
 
-    # 2. If trigger_scan is False and the user has no applications, return transient fallback jobs
-    app_count = db.query(Application).filter(Application.user_id == current_user.id).count()
-    if app_count == 0:
+    # 2. If trigger_scan is False and no jobs exist in DB, return transient fallback jobs
+    job_count = db.query(Job).count()
+    if job_count == 0:
         transient_fallbacks = []
         for prov_key, adapter in job_discovery_service.adapters.items():
             for fb in adapter.get_fallback_jobs("Software Engineer", "Bangalore, India", limit=4):
@@ -168,15 +168,22 @@ def get_jobs(
         return transient_fallbacks[:100]
 
     # 3. Build Query with eager loading for maximum speed (N+1 query elimination)
-    dismissed_job_ids = [j[0] for j in db.query(Application.job_id).filter(
+    # Only exclude jobs marked as Dismissed.
+    # Jobs that are Applied (Mail Pending), Visited, Saved, or Manual Intervention stay on the board with professional status badges and revert options.
+    dismissed_apps = db.query(Application).filter(
         Application.user_id == current_user.id,
         Application.status == "Dismissed"
-    ).all()]
+    ).all()
+
+    excluded_job_ids = set()
+    for app in dismissed_apps:
+        if app.job_id:
+            excluded_job_ids.add(app.job_id)
 
     query = db.query(Job).options(joinedload(Job.skills), joinedload(Job.job_matches))
     
-    if dismissed_job_ids:
-        query = query.filter(~Job.id.in_(dismissed_job_ids))
+    if excluded_job_ids:
+        query = query.filter(~Job.id.in_(list(excluded_job_ids)))
     
     profile = current_user.profile
     if profile:
@@ -255,6 +262,10 @@ def get_jobs(
         clean_company = (job.company or "").strip().lower()
         clean_url = (job.url or "").split("?")[0].rstrip("/").lower()
         
+        # Completely exclude email sent or dismissed jobs
+        if job.id in excluded_job_ids:
+            continue
+
         comp_title_key = f"{clean_company}::{clean_title}"
         if comp_title_key in seen_keys or (clean_url and clean_url in seen_keys):
             continue

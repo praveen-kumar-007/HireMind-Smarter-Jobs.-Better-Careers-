@@ -1,7 +1,7 @@
 import axios from 'axios'
 
-// Dynamically set API URL to connect via Vite proxy
-const API_URL = '/api'
+// Dynamically set API URL from environment variables with fallback
+const API_URL = import.meta.env.VITE_API_URL || '/api'
 
 const api = axios.create({
   baseURL: API_URL,

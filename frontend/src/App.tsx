@@ -12,6 +12,7 @@ import Register from './pages/Register'
 import Visited from './pages/Visited'
 import AllApplied from './pages/AllApplied'
 import ManualIntervention from './pages/ManualIntervention'
+import QABank from './pages/QABank'
 import { Menu, X } from 'lucide-react'
 
 // Guarded Route component checking for JWT tokens
@@ -81,6 +82,7 @@ export default function App() {
         <Route path="/visited" element={<Visited />} />
         <Route path="/applied" element={<AllApplied />} />
         <Route path="/applications" element={<Applications />} />
+        <Route path="/qa" element={<QABank />} />
         <Route path="/manual" element={<ManualIntervention />} />
         <Route path="/resume" element={<Resume />} />
         <Route path="/analytics" element={<Analytics />} />

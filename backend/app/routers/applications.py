@@ -1,12 +1,13 @@
 from typing import List, Optional
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, and_
+from sqlalchemy.orm import Session, joinedload
 from app.db.session import get_db
 from app.models.user import User
-from app.models.job import Job
+from app.models.job import Job, JobSkill
 from app.models.resume import Resume, ResumeVersion
-from app.models.application import Application, ApplicationAnswer
+from app.models.application import Application, ApplicationAnswer, ApplicationEvent
 from app.schemas.application import ApplicationCreate, ApplicationUpdate, ApplicationResponse, ApplicationAnswerCreate
 from app.routers.deps import get_current_user
 from app.services.ai_service import ai_service
@@ -53,42 +54,6 @@ def create_application(
     db.commit()
     db.refresh(app)
 
-    # 4. Auto-generate standard application screening answers if resume is uploaded
-    resume = db.query(Resume).filter(Resume.user_id == current_user.id, Resume.is_active == True).first()
-    if resume:
-        latest_version = db.query(ResumeVersion).filter(ResumeVersion.resume_id == resume.id).order_by(ResumeVersion.version.desc()).first()
-        if latest_version and latest_version.parsed_data:
-            # Generate common question responses
-            common_questions = [
-                "Tell us about yourself.",
-                "Why should we hire you for this role?",
-                "Why do you want this role?"
-            ]
-            primary_model = current_user.profile.primary_model or "qwen3:8b"
-            temp = current_user.profile.ai_temperature or 0.7
-            timeout = current_user.profile.ai_timeout or 120
-            for question in common_questions:
-                answer = ai_service.generate_answers(
-                    resume_data=latest_version.parsed_data,
-                    job_title=job.title,
-                    job_description=job.description or "",
-                    question=question,
-                    model_override=primary_model,
-                    temperature=temp,
-                    timeout_override=timeout
-                )
-                if "requires_user_input" in answer:
-                    app.status = "Review Required"
-                db_answer = ApplicationAnswer(
-                    application_id=app.id,
-                    question=question,
-                    answer=answer,
-                    is_generated=True
-                )
-                db.add(db_answer)
-            db.commit()
-            db.refresh(app)
-
     return app
 
 @router.get("", response_model=List[ApplicationResponse])
@@ -97,7 +62,10 @@ def get_applications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(Application).filter(Application.user_id == current_user.id)
+    query = db.query(Application).options(
+        joinedload(Application.job).joinedload(Job.skills),
+        joinedload(Application.answers)
+    ).filter(Application.user_id == current_user.id)
     if status_filter:
         statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
         if len(statuses) == 1:
@@ -112,7 +80,10 @@ def get_application_by_id(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    app = db.query(Application).filter(
+    app = db.query(Application).options(
+        joinedload(Application.job).joinedload(Job.skills),
+        joinedload(Application.answers)
+    ).filter(
         Application.id == app_id,
         Application.user_id == current_user.id
     ).first()
@@ -160,9 +131,83 @@ def delete_application(
     ).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application record not found.")
+    db.query(ApplicationAnswer).filter(ApplicationAnswer.application_id == app.id).delete()
+    db.query(ApplicationEvent).filter(ApplicationEvent.application_id == app.id).delete()
     db.delete(app)
     db.commit()
     return None
+
+@router.post("/revert-by-job/{job_id}")
+def revert_application_by_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Reverts an application by job_id, removing Application, Answers, and Events so the job is back in clean unapplied state."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    
+    apps = db.query(Application).filter(
+        Application.user_id == current_user.id,
+        Application.job_id == job_id
+    ).all()
+
+    if not apps and job:
+        apps = db.query(Application).filter(
+            Application.user_id == current_user.id,
+            func.lower(Application.company) == func.lower(job.company),
+            func.lower(Application.title) == func.lower(job.title)
+        ).all()
+
+    if not apps:
+        app_by_id = db.query(Application).filter(
+            Application.id == job_id,
+            Application.user_id == current_user.id
+        ).first()
+        if app_by_id:
+            apps = [app_by_id]
+
+    if not apps:
+        return {"status": "not_found", "message": f"No application record found to revert for job #{job_id}."}
+
+    job_title = job.title if job else (apps[0].title if apps else "Job")
+    company_name = job.company if job else (apps[0].company if apps else "")
+
+    for app in apps:
+        db.query(ApplicationAnswer).filter(ApplicationAnswer.application_id == app.id).delete()
+        db.query(ApplicationEvent).filter(ApplicationEvent.application_id == app.id).delete()
+        db.delete(app)
+    
+    db.commit()
+    return {
+        "status": "reverted", 
+        "message": f"Successfully reverted application for '{job_title}'{f' at {company_name}' if company_name else ''}. Status restored to unapplied."
+    }
+
+@router.post("/revert-last")
+def revert_last_application(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Reverts the most recent application made by the current user."""
+    latest_app = db.query(Application).filter(
+        Application.user_id == current_user.id
+    ).order_by(Application.id.desc()).first()
+    
+    if not latest_app:
+        return {"status": "not_found", "message": "No recent applications found to undo."}
+    
+    comp = latest_app.company or "Company"
+    tit = latest_app.title or "Job"
+    
+    db.query(ApplicationAnswer).filter(ApplicationAnswer.application_id == latest_app.id).delete()
+    db.query(ApplicationEvent).filter(ApplicationEvent.application_id == latest_app.id).delete()
+    db.delete(latest_app)
+    db.commit()
+    
+    return {
+        "status": "reverted", 
+        "message": f"Undone application for '{tit}' at {comp}. Status restored to unapplied."
+    }
 
 @router.post("/{app_id}/answer", response_model=ApplicationResponse)
 def generate_custom_screening_answer(
@@ -474,4 +519,149 @@ def auto_apply_all_matched(
         "auto_applied_count": applied_count,
         "ready_in_queue": saved_count,
         "message": f"Auto-apply complete! {applied_count} applied automatically, {saved_count} prepared in queue (Threshold: {effective_min_score}%)."
+    }
+
+
+# ==========================================
+# Application Q&A Management Endpoints
+# ==========================================
+
+from pydantic import BaseModel
+
+class QAUdpateRequest(BaseModel):
+    answer: str
+
+class QAGenerateRequest(BaseModel):
+    question: str
+    job_title: Optional[str] = "Software Developer"
+    job_description: Optional[str] = ""
+    max_words: Optional[int] = None
+
+@router.get("/qa/all")
+def get_all_application_qa(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve all screening questions and answers across all applications for the current user."""
+    results = db.query(ApplicationAnswer, Application, Job)\
+        .join(Application, ApplicationAnswer.application_id == Application.id)\
+        .outerjoin(Job, Application.job_id == Job.id)\
+        .filter(Application.user_id == current_user.id)\
+        .order_by(ApplicationAnswer.created_at.desc())\
+        .all()
+
+    qa_list = []
+    for ans, app, job in results:
+        qa_list.append({
+            "id": ans.id,
+            "application_id": app.id,
+            "question": ans.question,
+            "answer": ans.answer,
+            "is_generated": ans.is_generated,
+            "created_at": ans.created_at.isoformat() if ans.created_at else None,
+            "company": app.company or (job.company if job else "Unknown"),
+            "job_title": app.title or (job.title if job else "Position"),
+            "source": app.source or (job.source if job else "External"),
+            "job_id": job.id if job else app.job_id,
+            "job_url": job.url if job else None,
+            "status": app.status
+        })
+
+    return qa_list
+
+@router.put("/qa/{answer_id}")
+def update_qa_answer(
+    answer_id: int,
+    request: QAUdpateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update or customize the saved answer for an application question."""
+    ans = db.query(ApplicationAnswer)\
+        .join(Application, ApplicationAnswer.application_id == Application.id)\
+        .filter(ApplicationAnswer.id == answer_id, Application.user_id == current_user.id)\
+        .first()
+
+    if not ans:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question/Answer record not found."
+        )
+
+    ans.answer = request.answer.strip()
+    ans.is_generated = False # Mark as verified / customized by user
+    db.commit()
+    db.refresh(ans)
+
+    return {
+        "id": ans.id,
+        "question": ans.question,
+        "answer": ans.answer,
+        "is_generated": ans.is_generated
+    }
+
+@router.delete("/qa/{answer_id}")
+def delete_qa_answer(
+    answer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a saved question/answer record."""
+    ans = db.query(ApplicationAnswer)\
+        .join(Application, ApplicationAnswer.application_id == Application.id)\
+        .filter(ApplicationAnswer.id == answer_id, Application.user_id == current_user.id)\
+        .first()
+
+    if not ans:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question/Answer record not found."
+        )
+
+    db.delete(ans)
+    db.commit()
+    return {"status": "success", "message": "Question/Answer record removed."}
+
+@router.post("/qa/generate")
+def generate_ai_qa_answer(
+    request: QAGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Generate a high-quality tailored answer using Groq LPU / Gemini AI adhering to word count constraints."""
+    # Get active resume data
+    resume_data = {}
+    active_resume = db.query(Resume).filter(Resume.user_id == current_user.id, Resume.is_active == True).first()
+    if active_resume:
+        latest_ver = db.query(ResumeVersion).filter(ResumeVersion.resume_id == active_resume.id).order_by(ResumeVersion.version.desc()).first()
+        if latest_ver and latest_ver.parsed_data:
+            resume_data = latest_ver.parsed_data
+
+    # Add profile metadata
+    profile = current_user.profile
+    if profile:
+        if profile.full_name:
+            resume_data["name"] = profile.full_name
+        if profile.location:
+            resume_data["location"] = profile.location
+        if profile.notice_period:
+            resume_data["notice_period"] = profile.notice_period
+        if profile.phone:
+            resume_data["phone"] = profile.phone
+
+    question_prompt = request.question
+    if request.max_words and request.max_words > 0:
+        question_prompt += f" Provide your answer strictly within {request.max_words} words or less in first person."
+
+    answer = ai_service.generate_answers(
+        resume_data=resume_data,
+        job_title=request.job_title or "Software Developer",
+        job_description=request.job_description or "",
+        question=question_prompt
+    )
+
+    return {
+        "question": request.question,
+        "answer": answer,
+        "max_words": request.max_words
     }

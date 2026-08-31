@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../services/api'
-import { Save, User, Sliders, Shield, Database } from 'lucide-react'
+import { Save, User, Sliders, Shield, Database, Zap } from 'lucide-react'
 import CredentialSettings from '../components/CredentialSettings'
 
 
@@ -358,28 +358,28 @@ export default function Settings() {
           </div>
 
           {/* AI Settings Card */}
-          <div className="card" style={{ height: 'fit-content', border: '1px solid rgba(118, 185, 0, 0.25)' }}>
+          <div className="card" style={{ height: 'fit-content', border: '1px solid rgba(0, 120, 212, 0.25)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                <Shield size={18} style={{ color: '#76b900' }} />
-                NVIDIA NIM AI Acceleration
+                <Zap size={18} style={{ color: '#0078D4' }} />
+                AI Engine & Inference Settings
               </h3>
               <span style={{ 
                 fontSize: '0.7rem', 
-                background: 'rgba(118, 185, 0, 0.15)', 
-                color: '#76b900', 
+                background: '#EFF6FF', 
+                color: '#0078D4', 
                 padding: '0.2rem 0.5rem', 
                 borderRadius: '4px', 
                 fontWeight: '700',
-                border: '1px solid rgba(118, 185, 0, 0.3)'
+                border: '1px solid #BFDBFE'
               }}>
-                PRIMARY ENGINE
+                LOCAL + CLOUD
               </span>
             </div>
 
             <div style={{ 
-              background: 'rgba(118, 185, 0, 0.04)', 
-              border: '1px solid rgba(118, 185, 0, 0.15)', 
+              background: 'rgba(0, 120, 212, 0.04)', 
+              border: '1px solid rgba(0, 120, 212, 0.15)', 
               padding: '0.75rem', 
               borderRadius: '6px', 
               fontSize: '0.8rem', 
@@ -387,28 +387,30 @@ export default function Settings() {
               marginBottom: '1rem',
               lineHeight: '1.4'
             }}>
-              🚀 Powered by <strong>NVIDIA NIM Cloud Endpoints</strong> (Nemotron 550B Ultra + 30B Omni Reasoning) with automatic failover to local Ollama.
+              ⚡ Choose between <strong>Local AI (Ollama)</strong> (100% on-device & private with local-only fallback) or <strong>Cloud AI APIs</strong> (Groq LPU ~300 t/s with multi-cloud ML API fallback).
             </div>
 
             <div className="form-group">
-              <label className="form-label">Primary NVIDIA Reasoning Model</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                value={primaryModel || "nvidia/nemotron-3-ultra-550b-a55b"}
+              <label className="form-label">Active AI Engine</label>
+              <select
+                className="form-input"
+                value={primaryModel === 'ollama' ? 'local' : (primaryModel === 'cloud' || primaryModel === 'hybrid' || primaryModel === 'groq' || primaryModel === 'gemini' || primaryModel === 'nvidia' ? 'cloud' : primaryModel)}
                 onChange={(e) => setPrimaryModel(e.target.value)}
-                placeholder="nvidia/nemotron-3-ultra-550b-a55b"
-              />
+                style={{ cursor: 'pointer', fontWeight: '600' }}
+              >
+                <option value="local">🤖 Local AI (Ollama - 100% Private & On-Device)</option>
+                <option value="cloud">⚡ Cloud AI APIs (Groq LPU + Gemini 2.0 + NVIDIA NIM)</option>
+              </select>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Fast Extraction / Vision Model</label>
+              <label className="form-label">Fast Model / Sub-Agent</label>
               <input 
                 type="text" 
                 className="form-input" 
-                value={fastModel || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"}
+                value={fastModel || "qwen3:4b"}
                 onChange={(e) => setFastModel(e.target.value)}
-                placeholder="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+                placeholder="qwen3:4b / llama-3.1-8b-instant"
               />
             </div>
 

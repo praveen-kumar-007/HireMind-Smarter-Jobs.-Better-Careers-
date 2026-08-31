@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Briefcase, FileText, CheckCircle2, BarChart3, Settings, LogOut, Mail, Clock, X, AlertCircle } from 'lucide-react'
+import { LayoutDashboard, Briefcase, FileText, CheckCircle2, BarChart3, Settings, LogOut, Mail, Clock, X, AlertCircle, MessageSquareText } from 'lucide-react'
 
 interface SidebarProps {
   onLogout: () => void
@@ -68,6 +68,12 @@ export default function Sidebar({ onLogout, isOpen, onClose }: SidebarProps) {
           <NavLink to="/applications" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={handleLinkClick}>
             <Briefcase />
             <span>App Tracker</span>
+          </NavLink>
+        </li>
+        <li>
+          <NavLink to="/qa" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={handleLinkClick}>
+            <MessageSquareText style={{ color: '#818CF8' }} />
+            <span>Answer History</span>
           </NavLink>
         </li>
         <li>

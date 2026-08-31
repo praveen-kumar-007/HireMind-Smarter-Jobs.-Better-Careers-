@@ -123,6 +123,7 @@ a:hover {
   font-weight: 700;
   background: linear-gradient(135deg, #0078D4, #0284C7);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   display: flex;
   align-items: center;
@@ -305,6 +306,7 @@ a:hover {
   font-family: var(--font-display);
   background: linear-gradient(135deg, #0F172A 0%, #0078D4 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 

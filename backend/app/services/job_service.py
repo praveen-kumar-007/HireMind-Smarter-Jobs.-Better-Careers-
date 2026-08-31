@@ -34,7 +34,7 @@ class BaseRealAdapter(JobProviderAdapter):
         self.source_name = source_name
         self.platform_key = platform_key
 
-    def search_jobs(self, db: Session, user_id: int, query: str, location: str, limit: int = 15) -> list[dict]:
+    def search_jobs(self, db: Session, user_id: int, query: str, location: str, limit: int = 30) -> list[dict]:
         jobs = []
         cred = None
         
@@ -61,7 +61,7 @@ class BaseRealAdapter(JobProviderAdapter):
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=profile_dir,
                     channel="chrome",
-                    headless=settings.PLAYWRIGHT_HEADLESS,
+                    headless=True,  # Scraper always runs headless (3 parallel browsers)
                     viewport={"width": 1280, "height": 800},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                     args=[
@@ -94,31 +94,37 @@ class BaseRealAdapter(JobProviderAdapter):
         try:
             if self.platform_key == "linkedin":
                 page.goto("https://www.linkedin.com/login", wait_until="load")
-                page.wait_for_selector("input#username", timeout=15000)
-                page.fill("input#username", cred.username)
-                page.fill("input#password", cred.password)
-                page.click("button[type='submit']")
-                page.wait_for_timeout(3000)
-                if "checkpoint" in page.url or page.locator("input#input-code").is_visible():
-                    page.wait_for_timeout(10000)
-                    otp = email_verification_service.fetch_latest_otp(db, user_id, "LinkedIn")
-                    if otp:
-                        page.fill("input#input-code", otp)
-                        page.click("button#submit-code")
+                try:
+                    page.wait_for_selector("input#username", timeout=2000)
+                    page.fill("input#username", cred.username)
+                    page.fill("input#password", cred.password)
+                    page.click("button[type='submit']")
+                    page.wait_for_timeout(3000)
+                    if "checkpoint" in page.url or page.locator("input#input-code").is_visible():
+                        page.wait_for_timeout(5000)
+                        otp = email_verification_service.fetch_latest_otp(db, user_id, "LinkedIn")
+                        if otp:
+                            page.fill("input#input-code", otp)
+                            page.click("button#submit-code")
+                except Exception:
+                    logger.info("LinkedIn login input not found/active, assuming already logged in.")
             elif self.platform_key == "naukri":
                 page.goto("https://www.naukri.com/nlogin/login", wait_until="load")
-                page.wait_for_selector("input#usernameField", timeout=15000)
-                page.fill("input#usernameField", cred.username)
-                page.wait_for_selector("input#passwordField", timeout=15000)
-                page.fill("input#passwordField", cred.password)
-                page.click("button[type='submit']")
-                page.wait_for_timeout(5000)
-                if "otp" in page.url or page.locator("input[placeholder*='OTP']").is_visible():
-                    page.wait_for_timeout(10000)
-                    otp = email_verification_service.fetch_latest_otp(db, user_id, "Naukri")
-                    if otp:
-                        page.fill("input[placeholder*='OTP']", otp)
-                        page.click("button:has-text('Verify')")
+                try:
+                    page.wait_for_selector("input#usernameField", timeout=2000)
+                    page.fill("input#usernameField", cred.username)
+                    page.wait_for_selector("input#passwordField", timeout=2000)
+                    page.fill("input#passwordField", cred.password)
+                    page.click("button[type='submit']")
+                    page.wait_for_timeout(3000)
+                    if "otp" in page.url or page.locator("input[placeholder*='OTP']").is_visible():
+                        page.wait_for_timeout(5000)
+                        otp = email_verification_service.fetch_latest_otp(db, user_id, "Naukri")
+                        if otp:
+                            page.fill("input[placeholder*='OTP']", otp)
+                            page.click("button:has-text('Verify')")
+                except Exception:
+                    logger.info("Naukri login input not found/active, assuming already logged in.")
         except Exception as ex:
             logger.warning(f"Login sequence failed for {self.source_name}: {ex}")
 
@@ -183,8 +189,8 @@ class LinkedInAdapter(BaseRealAdapter):
         exp_level = getattr(self, "experience_level", "any")
         if exp_level == "junior":
             exp_filter = "&f_E=1,2" # Internship & Entry level
-        # Filter for jobs uploaded in the last 2 weeks using f_TPR=r1209600
-        search_url = f"https://www.linkedin.com/jobs/search?keywords={query}&location={location}&f_TPR=r1209600{exp_filter}"
+        # Filter for jobs uploaded in the last 2 weeks using f_TPR=r1209600, sorted by date (newest first) using sortBy=DD
+        search_url = f"https://www.linkedin.com/jobs/search?keywords={query}&location={location}&f_TPR=r1209600{exp_filter}&sortBy=DD"
         page.goto(search_url, wait_until="load")
         try:
             page.wait_for_selector("a.base-card__full-link", timeout=8000)
@@ -229,13 +235,22 @@ class NaukriAdapter(BaseRealAdapter):
         super().__init__("Naukri", "naukri")
 
     def scrape_search_results(self, page, query: str, location: str, limit: int) -> list[dict]:
+        import re
         jobs = []
         exp_filter = ""
         exp_level = getattr(self, "experience_level", "any")
         if exp_level == "junior":
             exp_filter = "&experience=0" # 0 years experience for freshers
-        # Filter for jobs uploaded in the last 30 days using jobAge=30
-        url = f"https://www.naukri.com/{query.lower().replace(' ', '-')}-jobs-in-{location.lower().replace(' ', '-')}?jobAge=30{exp_filter}"
+            
+        # Clean query and location to prevent 404 errors with special characters/commas
+        clean_query = re.sub(r'[^a-zA-Z0-9\s-]', '', query).strip().replace(' ', '-')
+        clean_loc = re.sub(r'[^a-zA-Z0-9\s-]', '', location).strip().replace(' ', '-')
+        # If location is worldwide, default to india for Naukri
+        if clean_loc.lower() == "worldwide":
+            clean_loc = "india"
+            
+        # Sort by date (newest first) using sort=dd
+        url = f"https://www.naukri.com/{clean_query.lower()}-jobs-in-{clean_loc.lower()}?jobAge=30{exp_filter}&sort=dd"
         logger.info(f"Navigating to Naukri search URL: {url}")
         page.goto(url, wait_until="load")
         try:
@@ -439,9 +454,9 @@ def job_to_dict(job: Job) -> dict:
 class JobDiscoveryService:
     def __init__(self):
         self.adapters = {
-            "company_website": CompanyWebsiteAdapter(),
+            "naukri": NaukriAdapter(),
             "linkedin": LinkedInAdapter(),
-            "naukri": NaukriAdapter()
+            "company_website": CompanyWebsiteAdapter()
         }
 
     def discover_and_save_jobs(self, db: Session, query: str, location: str, providers: list[str] = None, user_id: int = None, save_to_db: bool = False) -> list:
@@ -563,23 +578,18 @@ class JobDiscoveryService:
                 thread_db.close()
             return thread_saved
 
-        # Execute all 3 providers in parallel for maximum CDN-speed throughput
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(providers)) as executor:
-            future_to_prov = {executor.submit(harvest_provider, prov): prov for prov in providers}
+        # Execute providers sequentially to prevent high CPU / overheating
+        for prov in providers:
             try:
-                for future in concurrent.futures.as_completed(future_to_prov, timeout=40):
-                    try:
-                        results = future.result()
-                        if results:
-                            if save_to_db:
-                                found_jobs = db.query(Job).filter(Job.id.in_(results)).all()
-                                saved_jobs.extend(found_jobs)
-                            else:
-                                saved_jobs.extend(results)
-                    except Exception as ex:
-                        logger.warning(f"Provider task error: {ex}")
-            except concurrent.futures.TimeoutError as te:
-                logger.warning(f"Job discovery timeout (some providers did not finish): {te}")
+                results = harvest_provider(prov)
+                if results:
+                    if save_to_db:
+                        found_jobs = db.query(Job).filter(Job.id.in_(results)).all()
+                        saved_jobs.extend(found_jobs)
+                    else:
+                        saved_jobs.extend(results)
+            except Exception as ex:
+                logger.warning(f"Provider task error for {prov.source_name}: {ex}")
 
         return saved_jobs
 

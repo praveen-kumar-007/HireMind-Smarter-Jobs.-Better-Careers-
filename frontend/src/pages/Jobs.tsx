@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../services/api'
-import { Search, Sparkles, Plus, ExternalLink, Calendar, MapPin, Briefcase, Trash2, XCircle, CheckCircle2, BookmarkPlus, Clock, Zap } from 'lucide-react'
+import { Search, Sparkles, Plus, ExternalLink, Calendar, MapPin, Briefcase, Trash2, XCircle, CheckCircle2, BookmarkPlus, Clock, Zap, Mail, Bookmark, Send, RotateCcw } from 'lucide-react'
 import LiveTimer from '../components/LiveTimer'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
@@ -17,6 +17,7 @@ export default function Jobs() {
   const [autoApplyingAll, setAutoApplyingAll] = useState(false)
   const [activeMatchJobId, setActiveMatchJobId] = useState<number | null>(null)
   const [autoApplyingJobId, setAutoApplyingJobId] = useState<number | null>(null)
+  const [revertingJobId, setRevertingJobId] = useState<number | null>(null)
   const [liveSession, setLiveSession] = useState<{ isOpen: boolean; appId: number | null; jobTitle: string; company: string }>({
     isOpen: false,
     appId: null,
@@ -32,11 +33,12 @@ export default function Jobs() {
 
   // Fetch Jobs List with live 1s refetch during active crawling
   const { data: jobs, refetch, isFetching } = useQuery({
-    queryKey: ['jobs', scanning],
+    queryKey: ['jobs'],
     queryFn: async () => {
       const response = await api.get('/jobs')
       return response.data
     },
+    staleTime: 0,
     refetchInterval: scanning ? 1000 : false
   })
 
@@ -87,27 +89,27 @@ export default function Jobs() {
       if (applyType === 'external' && isQuick) return false;
     }
 
-    // 4. Remove fully-applied ones (but keep Quick Applied & Company Website jobs visible)
+    // 4. Only filter out Dismissed jobs (Applied, Visited, and Saved jobs stay visible with status badges and revert options)
     const appForJob = userApplications?.find((app: any) => 
-      (app.job?.job_id === job.job_id || app.job_id === job.id) && app.status !== 'Dismissed'
+      (app.job?.job_id === job.job_id || app.job_id === job.id) ||
+      (app.company?.trim().toLowerCase() === job.company?.trim().toLowerCase() && 
+       app.title?.trim().toLowerCase() === job.title?.trim().toLowerCase())
     );
-    if (appForJob) {
-      // Keep Quick Applied and Company Website jobs visible on the board
-      const isQuickApplied = appForJob.notes?.includes('Quick Applied');
-      const isCompanyWebsite = appForJob.notes?.includes('Company Website');
-      if (!isQuickApplied && !isCompanyWebsite) {
-        return false;
-      }
+
+    if (appForJob && appForJob.status === 'Dismissed') {
+      return false;
     }
 
     return true;
   });
 
-  // Sort: Quick Apply (LinkedIn, Naukri, Indeed) first, then Company Website
+  // Sort: Naukri first, then LinkedIn/Indeed, then Company Website
   const sortedFilteredJobs = [...filteredJobs].sort((a: any, b: any) => {
+    if (a.source === 'Naukri' && b.source !== 'Naukri') return -1;
+    if (a.source !== 'Naukri' && b.source === 'Naukri') return 1;
+    
     const isQuickA = a.source !== 'Company Website';
     const isQuickB = b.source !== 'Company Website';
-    
     if (isQuickA && !isQuickB) return -1;
     if (!isQuickA && isQuickB) return 1;
     
@@ -270,12 +272,19 @@ export default function Jobs() {
       queryClient.invalidateQueries({ queryKey: ['applications'] })
       queryClient.invalidateQueries({ queryKey: ['visited-applications'] })
 
-      if (res.data.status === 'success') {
+      if (res.data.status === 'started') {
+        // Expected success state: Background automation runner process spawned
+        setToast({
+          type: 'success',
+          message: 'Browser automation session started successfully!'
+        })
+      } else if (res.data.status === 'success') {
         setToast({
           type: 'success',
           message: 'Success! The AI agent completed the Easy Apply submission.'
         })
       } else if (res.data.status === 'manual_apply_required') {
+        setLiveSession({ isOpen: false, appId: null, jobTitle: '', company: '' })
         setToast({
           type: 'info',
           message: `Company Website Detected: ${res.data.message || 'Left for manual application as requested.'}`
@@ -285,13 +294,20 @@ export default function Jobs() {
           type: 'info',
           message: `Human Action Required: ${res.data.message}`
         })
+      } else {
+        setLiveSession({ isOpen: false, appId: null, jobTitle: '', company: '' })
+        setToast({
+          type: 'error',
+          message: res.data.message || 'Failed to auto-apply.'
+        })
       }
     },
     onError: (err: any) => {
       setAutoApplyingJobId(null)
+      setLiveSession({ isOpen: false, appId: null, jobTitle: '', company: '' })
       setToast({
         type: 'error',
-        message: err.response?.data?.detail || 'Failed to auto-apply. Ensure credentials and profiles are set.'
+        message: err.response?.data?.detail || err.message || 'Failed to auto-apply. Ensure credentials and profiles are set.'
       })
     }
   })
@@ -353,6 +369,68 @@ export default function Jobs() {
     }
   })
 
+  // Revert Last Application Mutation (Global Undo)
+  const revertLastMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/applications/revert-last')
+      return response.data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['applications'] })
+      queryClient.invalidateQueries({ queryKey: ['visited-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['pending-outreach-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['all-applied-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      if (data.status === 'reverted') {
+        setToast({
+          type: 'success',
+          message: data.message || 'Last application reverted back to unapplied!'
+        })
+      } else {
+        setToast({
+          type: 'info',
+          message: data.message || 'No recent application found to revert.'
+        })
+      }
+    },
+    onError: (err: any) => {
+      setToast({
+        type: 'error',
+        message: err.response?.data?.detail || 'Failed to revert last application.'
+      })
+    }
+  })
+
+  // Revert Specific Job Application Mutation
+  const revertJobMutation = useMutation({
+    mutationFn: async (job: any) => {
+      setRevertingJobId(job.id)
+      const response = await api.post(`/applications/revert-by-job/${job.id}`)
+      return { data: response.data, job }
+    },
+    onSuccess: (res) => {
+      setRevertingJobId(null)
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['applications'] })
+      queryClient.invalidateQueries({ queryKey: ['visited-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['pending-outreach-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['all-applied-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      setToast({
+        type: 'success',
+        message: res.data.message || `Reverted application for "${res.job.title}". Restored to unapplied.`
+      })
+    },
+    onError: (err: any) => {
+      setRevertingJobId(null)
+      setToast({
+        type: 'error',
+        message: err.response?.data?.detail || 'Failed to revert application for this job.'
+      })
+    }
+  })
+
   const getMatchScoreBadge = (score: number) => {
     if (score >= 80) return 'badge-success'
     if (score >= 60) return 'badge-primary'
@@ -368,6 +446,26 @@ export default function Jobs() {
         </div>
         
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => revertLastMutation.mutate()}
+            disabled={revertLastMutation.isPending}
+            style={{
+              borderColor: '#F59E0B',
+              color: '#B45309',
+              background: '#FFFBEB',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              fontWeight: '600',
+              boxShadow: '0 1px 3px rgba(245, 158, 11, 0.1)'
+            }}
+            title="Undo / Revert the most recently applied job back to unapplied state"
+          >
+            <RotateCcw size={15} style={{ animation: revertLastMutation.isPending ? 'spin 1s linear infinite' : 'none' }} />
+            {revertLastMutation.isPending ? 'Undoing...' : 'Undo Last Apply'}
+          </button>
+
           <button 
             className="btn" 
             onClick={() => autoApplyAllMutation.mutate()}
@@ -447,6 +545,49 @@ export default function Jobs() {
               value={location}
               onChange={(e) => setLocation(e.target.value)}
             />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+              {[
+                { name: 'Worldwide', val: 'Worldwide' },
+                { name: 'India', val: 'India' },
+                { name: 'Bangalore', val: 'Bangalore' },
+                { name: 'Pune', val: 'Pune' },
+                { name: 'Noida', val: 'Noida' },
+                { name: 'Gurgaon', val: 'Gurgaon' },
+                { name: 'Delhi', val: 'Delhi' },
+                { name: 'Maharashtra', val: 'Maharashtra' }
+              ].map(loc => (
+                <button
+                  key={loc.val}
+                  type="button"
+                  onClick={() => setLocation(loc.val)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border-color)',
+                    background: location === loc.val ? 'var(--primary-color)' : 'var(--bg-secondary)',
+                    color: location === loc.val ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (location !== loc.val) {
+                      e.currentTarget.style.borderColor = 'var(--primary-color)'
+                      e.currentTarget.style.color = 'var(--text-primary)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (location !== loc.val) {
+                      e.currentTarget.style.borderColor = 'var(--border-color)'
+                      e.currentTarget.style.color = 'var(--text-secondary)'
+                    }
+                  }}
+                >
+                  {loc.name}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="form-group">
             <label className="form-label">Source Board</label>
@@ -456,10 +597,10 @@ export default function Jobs() {
               onChange={(e) => setSource(e.target.value)}
               style={{ background: 'var(--bg-tertiary)' }}
             >
-              <option value="">All Sources (Company Sites, LinkedIn, Naukri)</option>
-              <option value="Company Website">Company Website (Direct Careers)</option>
-              <option value="LinkedIn">LinkedIn</option>
+              <option value="">All Sources (Naukri, LinkedIn, Company Sites)</option>
               <option value="Naukri">Naukri</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Company Website">Company Website (Direct Careers)</option>
             </select>
           </div>
           <div className="form-group">
@@ -553,34 +694,55 @@ export default function Jobs() {
                       
                       {appRecord?.status === 'Applied' && (
                         <span style={{
-                          background: appRecord.notes?.includes('Company Website') 
-                            ? 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)'
-                            : appRecord.notes?.includes('Quick Applied') 
-                              ? 'linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%)' 
-                              : appRecord.notes?.includes('Outreach Email Sent') ? '#D1FAE5' : '#ECFDF5',
-                          border: appRecord.notes?.includes('Company Website')
-                            ? '1px solid #F59E0B'
-                            : appRecord.notes?.includes('Quick Applied')
-                              ? '1px solid #10B981'
-                              : appRecord.notes?.includes('Outreach Email Sent') ? '1px solid #10B981' : '1px solid #A7F3D0',
-                          color: appRecord.notes?.includes('Company Website') ? '#92400E' : '#065F46',
-                          fontSize: '0.72rem',
+                          background: '#FEF3C7',
+                          border: '1px solid #F59E0B',
+                          color: '#92400E',
+                          fontSize: '0.74rem',
                           fontWeight: '700',
-                          padding: '0.15rem 0.55rem',
+                          padding: '0.2rem 0.65rem',
                           borderRadius: '999px',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '0.35rem'
+                          gap: '0.35rem',
+                          boxShadow: '0 1px 3px rgba(245, 158, 11, 0.15)'
                         }}>
-                          <CheckCircle2 size={12} /> {
-                            appRecord.notes?.includes('Company Website')
-                              ? '🌐 Company Website - Apply Manually'
-                              : appRecord.notes?.includes('Quick Applied') 
-                                ? '⚡ Quick Applied & Queued for Mail' 
-                                : appRecord.notes?.includes('Outreach Email Sent') 
-                                  ? 'Applied & Outreach Sent' 
-                                  : 'Applied & Queued'
-                          }
+                          <Mail size={13} style={{ color: '#D97706' }} /> Mail Pending
+                        </span>
+                      )}
+
+                      {(appRecord?.status === 'Manual Intervention' || isCompanyWebsite) && (
+                        <span style={{
+                          background: '#EEF2FF',
+                          border: '1px solid #818CF8',
+                          color: '#3730A3',
+                          fontSize: '0.74rem',
+                          fontWeight: '700',
+                          padding: '0.2rem 0.65rem',
+                          borderRadius: '999px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          boxShadow: '0 1px 3px rgba(99, 102, 241, 0.15)'
+                        }}>
+                          <ExternalLink size={13} style={{ color: '#6366F1' }} /> Manual Intervention
+                        </span>
+                      )}
+
+                      {appRecord?.status === 'Saved' && (
+                        <span style={{
+                          background: '#F3E8FF',
+                          border: '1px solid #C084FC',
+                          color: '#6B21A8',
+                          fontSize: '0.74rem',
+                          fontWeight: '700',
+                          padding: '0.2rem 0.65rem',
+                          borderRadius: '999px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          boxShadow: '0 1px 3px rgba(168, 85, 247, 0.15)'
+                        }}>
+                          <Bookmark size={13} style={{ color: '#A855F7' }} /> Saved
                         </span>
                       )}
 
@@ -589,15 +751,15 @@ export default function Jobs() {
                           background: '#FFFBEB',
                           border: '1px solid #FDE68A',
                           color: '#B45309',
-                          fontSize: '0.72rem',
+                          fontSize: '0.74rem',
                           fontWeight: '700',
-                          padding: '0.15rem 0.55rem',
+                          padding: '0.2rem 0.65rem',
                           borderRadius: '999px',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '0.3rem'
                         }}>
-                          <Clock size={12} /> In Pending Queue
+                          <Clock size={13} /> In Pending Queue
                         </span>
                       )}
                     </div>
@@ -630,31 +792,85 @@ export default function Jobs() {
                       </button>
                     )}
 
-                    <button 
-                      className="btn btn-primary"
-                      onClick={() => autoApplyMutation.mutate({ job })}
-                      disabled={autoApplyMutation.isPending && autoApplyingJobId === job.id}
-                      style={{ background: 'linear-gradient(135deg, #0078D4 0%, #005A9E 100%)' }}
-                      title="Auto-apply via AI and track in Visited Outreach"
-                    >
-                      <Sparkles size={14} />
-                      {autoApplyMutation.isPending && autoApplyingJobId === job.id ? 'Applying...' : 'Auto-Apply'}
-                    </button>                    <button 
-                      className="btn btn-secondary" 
-                      onClick={() => trackInVisitedMutation.mutate(job)}
-                      disabled={trackInVisitedMutation.isPending}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-                      title="Store in Pending Outreach Queue"
-                    >
-                      <BookmarkPlus size={15} style={{ color: 'var(--primary)' }} />
-                      Add to Pending Mail
-                    </button>
+                    {appRecord && appRecord.status !== 'Dismissed' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        {appRecord.status === 'Applied' && (
+                          <a 
+                            href="/visited"
+                            className="btn btn-secondary"
+                            style={{ background: '#FEF3C7', color: '#92400E', borderColor: '#F59E0B', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', textDecoration: 'none' }}
+                            title="Application submitted! Click to send recruiter follow-up mail"
+                          >
+                            <Mail size={14} style={{ color: '#D97706' }} />
+                            Send HR Mail
+                          </a>
+                        )}
+
+                        {(appRecord.status === 'Manual Intervention' || isCompanyWebsite) && (
+                          <a
+                            href={job.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-primary"
+                            style={{ background: 'linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', textDecoration: 'none' }}
+                            title="Apply directly on company website"
+                          >
+                            <ExternalLink size={14} />
+                            Apply on Site
+                          </a>
+                        )}
+
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => revertJobMutation.mutate(job)}
+                          disabled={revertJobMutation.isPending && revertingJobId === job.id}
+                          style={{
+                            borderColor: '#F59E0B',
+                            color: '#B45309',
+                            background: '#FFFBEB',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.82rem',
+                            fontWeight: '600'
+                          }}
+                          title="Undo application and revert this job back to unapplied state"
+                        >
+                          <RotateCcw size={13} style={{ animation: revertingJobId === job.id ? 'spin 1s linear infinite' : 'none' }} />
+                          {revertJobMutation.isPending && revertingJobId === job.id ? 'Reverting...' : 'Undo Apply'}
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button 
+                          className="btn btn-primary"
+                          onClick={() => autoApplyMutation.mutate({ job })}
+                          disabled={autoApplyMutation.isPending && autoApplyingJobId === job.id}
+                          style={{ background: 'linear-gradient(135deg, #0078D4 0%, #005A9E 100%)' }}
+                          title="Auto-apply via AI"
+                        >
+                          <Sparkles size={14} />
+                          {autoApplyMutation.isPending && autoApplyingJobId === job.id ? 'Applying...' : 'Auto-Apply'}
+                        </button>
+
+                        <button 
+                          className="btn btn-secondary" 
+                          onClick={() => trackInVisitedMutation.mutate(job)}
+                          disabled={trackInVisitedMutation.isPending}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                          title="Store in Pending Outreach Queue"
+                        >
+                          <BookmarkPlus size={15} style={{ color: 'var(--primary)' }} />
+                          Add to Mail Queue
+                        </button>
+                      </>
+                    )}
 
                     <button 
                       className="btn btn-secondary" 
                       onClick={() => setDismissTarget({ id: job.id, job_id: job.job_id, title: job.title })}
                       style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#f87171', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
-                      title="Clear / Dismiss if not relevant"
+                      title="Clear / Dismiss"
                     >
                       <XCircle size={15} />
                       Clear

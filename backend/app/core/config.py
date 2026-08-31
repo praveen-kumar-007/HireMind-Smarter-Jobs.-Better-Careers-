@@ -29,7 +29,23 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # AI & LLM Settings
-    AI_PROVIDER: str = "nvidia"
+    AI_PROVIDER: str = "ollama"
+    
+    # Groq Cloud (Ultra-Fast 300 t/s LPU)
+    GROQ_API_KEY: str = ""
+    GROQ_API_KEY_FALLBACK: str = ""
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+    GROQ_PRIMARY_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_FAST_MODEL: str = "llama-3.1-8b-instant"
+    GROQ_TIMEOUT: int = 15
+
+    # Google Gemini (High Quota Fallback)
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    GEMINI_PRIMARY_MODEL: str = "gemini-2.0-flash"
+    GEMINI_TIMEOUT: int = 20
+
+    # NVIDIA NIM
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
     NVIDIA_API_KEY: str = ""
     NVIDIA_API_KEY_FALLBACK: str = ""
@@ -37,6 +53,7 @@ class Settings(BaseSettings):
     NVIDIA_FAST_MODEL: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     NVIDIA_TIMEOUT: int = 60
 
+    # Ollama Local
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_PRIMARY_MODEL: str = "qwen3:8b"
     OLLAMA_FAST_MODEL: str = "qwen3:4b"
@@ -46,9 +63,16 @@ class Settings(BaseSettings):
     # Playwright Settings
     PLAYWRIGHT_HEADLESS: bool = True
     CHROME_CDP_URL: str = "http://127.0.0.1:9222"
+    TAILOR_RESUME: bool = False
 
     # CORS Origins
-    BACKEND_CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    BACKEND_CORS_ORIGINS: Union[List[str], str] = [
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173", 
+        "http://localhost:3000",
+        "https://*.vercel.app",
+        "https://*.onrender.com"
+    ]
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
@@ -62,7 +86,10 @@ class Settings(BaseSettings):
     from pydantic import model_validator
     @model_validator(mode="after")
     def assemble_db_url(self) -> "Settings":
-        if not self.DATABASE_URL:
+        if self.DATABASE_URL:
+            if self.DATABASE_URL.startswith("mysql://"):
+                self.DATABASE_URL = self.DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
+        elif self.MYSQL_USER:
             from urllib.parse import quote_plus
             pw = quote_plus(self.MYSQL_PASSWORD) if self.MYSQL_PASSWORD else ""
             self.DATABASE_URL = f"mysql+pymysql://{self.MYSQL_USER}:{pw}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}"
@@ -70,7 +97,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         case_sensitive=True,
-        env_file=(".env", "../.env", "backend/.env"),
+        env_file=("backend/.env", ".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )

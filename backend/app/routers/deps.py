@@ -5,7 +5,10 @@ from app.db.session import get_db
 from app.core.security import decode_token
 from app.models.user import User
 
+from typing import Optional
+
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)
 
 def get_current_user(
     db: Session = Depends(get_db),
@@ -37,6 +40,24 @@ def get_current_user(
             detail="User account is inactive",
         )
     return user
+
+def get_current_user_optional(
+    db: Session = Depends(get_db),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
+) -> Optional[User]:
+    if not credentials:
+        return None
+    try:
+        token = credentials.credentials
+        payload = decode_token(token)
+        if not payload or payload.get("type") != "access":
+            return None
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        return db.query(User).filter(User.id == int(user_id)).first()
+    except Exception:
+        return None
 
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     return current_user
