@@ -34,12 +34,20 @@ def on_startup():
     try:
         init_db(db)
         logger.info("Database initialized successfully.")
-        # from app.services.agent_worker import start_agent_worker
-        # start_agent_worker()
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
     finally:
         db.close()
+
+    # On cloud / Linux startup, ensure Playwright Chromium binary is installed
+    import sys
+    if sys.platform != "win32":
+        try:
+            import subprocess
+            logger.info("Ensuring Playwright Chromium binaries are available for cloud automation...")
+            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+        except Exception as e_pw:
+            logger.warning(f"Playwright cloud initialization notice: {e_pw}")
 
 # Router Mounts
 app.include_router(auth.router, prefix="/api")

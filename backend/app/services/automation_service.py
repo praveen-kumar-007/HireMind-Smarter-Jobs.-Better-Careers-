@@ -85,141 +85,96 @@ class BrowserManager:
                     pass
 
     def _launch_browser_context(self, p, profile_dir: str, headless: bool):
-        """Launches actual Google Chrome browser, or connects to an existing Chrome via CDP on port 9222."""
-        # Try connecting to an existing Chrome browser instance first via CDP
-        try:
-            import socket
-            import urllib.request
-            from urllib.parse import urlparse
-            
-            # Fast socket check to see if remote debugging port is listening
-            parsed_url = urlparse(settings.CHROME_CDP_URL)
-            host = parsed_url.hostname or "127.0.0.1"
-            port = parsed_url.port or 9222
-            
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.6)
-                s.connect((host, port))
+        """Launches actual Google Chrome browser, connects to an existing Chrome via CDP, or launches headless Chromium in cloud/Linux."""
+        is_windows = sys.platform == "win32"
+        effective_headless = True if not is_windows else headless
+
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-infobars"
+        ]
+
+        # 1. Try connecting to an existing Chrome browser instance via CDP (Local Windows development)
+        if is_windows:
+            try:
+                import socket
+                import urllib.request
+                from urllib.parse import urlparse
                 
-            # Check JSON version
-            cdp_version_url = f"{settings.CHROME_CDP_URL}/json/version" if not settings.CHROME_CDP_URL.endswith('/json/version') else settings.CHROME_CDP_URL
-            with urllib.request.urlopen(cdp_version_url, timeout=0.8) as response:
-                if response.status == 200:
-                    logger.info(f"Found running Chrome instance on {settings.CHROME_CDP_URL}. Connecting via CDP...")
-                    browser = p.chromium.connect_over_cdp(settings.CHROME_CDP_URL)
-                    if browser.contexts:
-                        context = browser.contexts[0]
-                        # Prevent closing the user's active browser context/tabs
-                        context.close = lambda: logger.info("CDP session close requested - keeping user's Chrome open.")
-                        context._cdp_browser = browser
-                        return context
-                    else:
-                        context = browser.new_context()
-                        context._cdp_browser = browser
-                        return context
-        except Exception as e:
-            logger.info("Chrome CDP port not active. Attempting to launch dedicated debug profile directly...")
-            launch_args = [
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-infobars",
-                "--start-maximized"
-            ]
+                parsed_url = urlparse(settings.CHROME_CDP_URL)
+                host = parsed_url.hostname or "127.0.0.1"
+                port = parsed_url.port or 9222
+                
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.5)
+                    s.connect((host, port))
+                    
+                cdp_version_url = f"{settings.CHROME_CDP_URL}/json/version" if not settings.CHROME_CDP_URL.endswith('/json/version') else settings.CHROME_CDP_URL
+                with urllib.request.urlopen(cdp_version_url, timeout=0.6) as response:
+                    if response.status == 200:
+                        logger.info(f"Found running Chrome instance on {settings.CHROME_CDP_URL}. Connecting via CDP...")
+                        browser = p.chromium.connect_over_cdp(settings.CHROME_CDP_URL)
+                        if browser.contexts:
+                            context = browser.contexts[0]
+                            context.close = lambda: logger.info("CDP session close requested - keeping user's Chrome open.")
+                            context._cdp_browser = browser
+                            return context
+                        else:
+                            context = browser.new_context()
+                            context._cdp_browser = browser
+                            return context
+            except Exception:
+                logger.info("Chrome CDP port not active. Proceeding with browser launch...")
+
+            # 2. Try launching Windows Chrome directly if available
             chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
             if not os.path.exists(chrome_exe):
                 chrome_exe = r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-                
+
             debug_profile_dir = r"C:\chrome-debug"
-            if os.path.exists(chrome_exe):
+            if os.path.exists(chrome_exe) and os.path.exists(debug_profile_dir):
                 try:
                     logger.info(f"Directly launching Chrome with C:\\chrome-debug profile...")
                     context = p.chromium.launch_persistent_context(
                         user_data_dir=debug_profile_dir,
                         executable_path=chrome_exe,
                         channel="chrome",
-                        headless=headless,
-                        slow_mo=150,
+                        headless=effective_headless,
+                        slow_mo=100 if not effective_headless else None,
                         args=launch_args
                     )
                     return context
                 except Exception as e_direct:
                     logger.warning(f"Could not directly open C:\\chrome-debug profile: {e_direct}")
-            
-            if not headless:
-                raise ConnectionError(
-                    "Chrome debugging port 9222 is not active, and direct launch failed. "
-                    "To automate inside your logged-in profile: "
-                    "1. Close ALL Google Chrome windows. "
-                    "2. Run the 'start_debug_chrome.bat' script. "
-                    "3. Open the dashboard and try again."
-                )
-            logger.info("Chrome CDP port not active. Launching a new browser...")
 
-        launch_args = [
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-infobars",
-            "--start-maximized"
-        ]
-        
-        chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-        if not os.path.exists(chrome_exe):
-            chrome_exe = r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-
-        # Priority 1: Direct Google Chrome application with personal default profile
-        if os.path.exists(chrome_exe):
-            try:
-                local_app_data = os.environ.get("LOCALAPPDATA", "")
-                default_profile_dir = os.path.join(local_app_data, "Google", "Chrome", "User Data")
-                if os.path.exists(default_profile_dir):
-                    try:
-                        logger.info(f"Attempting to launch Chrome with personal profile: {default_profile_dir}")
-                        context = p.chromium.launch_persistent_context(
-                            user_data_dir=default_profile_dir,
-                            executable_path=chrome_exe,
-                            channel="chrome",
-                            headless=headless,
-                            slow_mo=150,
-                            args=launch_args
-                        )
-                        return context
-                    except Exception as e_persistent:
-                        logger.info(f"Could not open persistent profile (probably locked by open Chrome): {e_persistent}")
-                
-                # Standard clean browser fallback if persistent profile is locked
-                browser = p.chromium.launch(
-                    executable_path=chrome_exe,
-                    headless=headless,
-                    slow_mo=150,
-                    args=launch_args
-                )
-                return browser.new_context(
-                    no_viewport=True,
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                )
-            except Exception as e_chrome:
-                logger.info(f"Direct Chrome launch note ({e_chrome}), trying Chromium...")
-
-        # Priority 2: Bundled Chromium with visual slow_mo
+        # 3. Cloud / Standard Chromium Launch (Always succeeds in headless Linux / Render / Docker)
         try:
             browser = p.chromium.launch(
-                headless=headless,
-                slow_mo=150,
+                headless=effective_headless,
+                slow_mo=100 if (not effective_headless and is_windows) else None,
                 args=launch_args
             )
             return browser.new_context(
-                no_viewport=True,
+                viewport={"width": 1280, "height": 800},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
-        except Exception as e1:
-            logger.info(f"Chromium launch with slow_mo fallback ({e1})...")
-
-        # Priority 3: Fallback standard browser
-        browser = p.chromium.launch(headless=headless, args=launch_args)
-        return browser.new_context(
-            viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        )
+        except Exception as e_launch:
+            # If Playwright browser binaries are missing in Linux container, auto-install and retry
+            logger.warning(f"Chromium launch error: {e_launch}. Attempting auto-install of Playwright Chromium...")
+            try:
+                import subprocess
+                subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+                browser = p.chromium.launch(headless=True, args=launch_args)
+                return browser.new_context(
+                    viewport={"width": 1280, "height": 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                )
+            except Exception as e_retry:
+                raise ConnectionError(f"Cloud Browser Automation failed to launch Chromium: {e_retry}")
 
     def generate_tailored_pdf_in_page(self, page: Page, app: Application, resume_data: dict, db: Session) -> str:
         """Tailors career objective and skills matching the job using AI, then renders to PDF in current browser."""
