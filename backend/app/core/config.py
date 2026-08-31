@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     # CORS Origins
     BACKEND_CORS_ORIGINS: Union[List[str], str] = [
         "https://hire-mind-praveen.vercel.app",
+        "https://hiremind-smarter-jobs-better-careers.onrender.com",
         "http://localhost:5173", 
         "http://127.0.0.1:5173", 
         "http://localhost:3000",
