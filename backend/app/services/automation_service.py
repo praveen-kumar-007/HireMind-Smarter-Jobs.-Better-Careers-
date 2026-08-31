@@ -1,9 +1,13 @@
 import os
+import sys
 import re
 import time
+import json
 import socket
+import subprocess
 import urllib.request
 from urllib.parse import urlparse
+from datetime import datetime
 import logging
 from playwright.sync_api import sync_playwright, Page
 from sqlalchemy.orm import Session
@@ -219,9 +223,11 @@ class BrowserManager:
         pdf_path = os.path.abspath(os.path.join("app/static/resumes", pdf_filename))
 
         # Render PDF using a temporary headless browser session (since page.pdf() is not supported in headed/CDP mode)
-        from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            temp_browser = p.chromium.launch(headless=True)
+            temp_browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+            )
             temp_page = temp_browser.new_page()
             temp_page.set_content(html_content, wait_until="load")
             temp_page.add_style_tag(content='#download-btn { display: none !important; } .download-btn-wrapper { display: none !important; }')
