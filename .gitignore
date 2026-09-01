@@ -38,6 +38,13 @@ logs/
 backend/app/static/*.log
 backend/app/static/browser_profile*/
 
+# SQLite Databases
+*.db
+*.sqlite
+*.sqlite3
+backend/*.db
+backend/*.sqlite3
+
 # Generated Uploads & Resumes
 backend/uploads/*
 !backend/uploads/.gitkeep

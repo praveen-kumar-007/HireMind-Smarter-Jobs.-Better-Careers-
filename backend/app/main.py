@@ -60,6 +60,15 @@ app.include_router(ai.router, prefix="/api")
 app.include_router(credentials.router, prefix="/api")
 app.include_router(outreach.router, prefix="/api")
 
+# User endpoints alias for frontend / extension compatibility
+from app.models.user import User
+from app.schemas.auth import UserResponse
+from app.routers.deps import get_current_user
+from fastapi import Depends
+
+@app.get("/api/users/me", response_model=UserResponse, tags=["users"])
+def get_user_me(current_user: User = Depends(get_current_user)):
+    return current_user
 
 @app.get("/")
 def read_root():

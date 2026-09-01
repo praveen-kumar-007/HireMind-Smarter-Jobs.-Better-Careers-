@@ -15,6 +15,16 @@ class ApplicationAnswerCreate(BaseModel):
     question: str
     answer: str
 
+class ApplicationEventCreate(BaseModel):
+    step: str
+    progress: int = 0
+    status_text: str
+    is_error: bool = False
+
+class ApplicationStatusUpdate(BaseModel):
+    status: str
+    notes: Optional[str] = None
+
 class ApplicationCreate(BaseModel):
     job_id: int
 

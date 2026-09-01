@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../services/api'
-import { Search, Sparkles, Plus, ExternalLink, Calendar, MapPin, Briefcase, Trash2, XCircle, CheckCircle2, BookmarkPlus, Clock, Zap, Mail, Bookmark, Send, RotateCcw } from 'lucide-react'
+import { Search, Sparkles, Plus, ExternalLink, Calendar, MapPin, Briefcase, Trash2, XCircle, CheckCircle2, BookmarkPlus, Clock, Zap, Mail, Bookmark, Send, RotateCcw, Puzzle } from 'lucide-react'
 import LiveTimer from '../components/LiveTimer'
 import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
@@ -13,11 +13,14 @@ export default function Jobs() {
   const [source, setSource] = useState('')
   const [applyType, setApplyType] = useState('')
   const [matchProfile, setMatchProfile] = useState(true)
+  const [showApplied, setShowApplied] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [autoApplyingAll, setAutoApplyingAll] = useState(false)
   const [activeMatchJobId, setActiveMatchJobId] = useState<number | null>(null)
   const [autoApplyingJobId, setAutoApplyingJobId] = useState<number | null>(null)
   const [revertingJobId, setRevertingJobId] = useState<number | null>(null)
+  const [hasExtension, setHasExtension] = useState(false)
+  const [showExtensionModal, setShowExtensionModal] = useState(false)
   const [liveSession, setLiveSession] = useState<{ isOpen: boolean; appId: number | null; jobTitle: string; company: string }>({
     isOpen: false,
     appId: null,
@@ -30,6 +33,64 @@ export default function Jobs() {
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
 
   const queryClient = useQueryClient()
+
+  // Detect and synchronize with HireMind Chrome Extension
+  useEffect(() => {
+    const checkExt = () => {
+      if ((window as any).__HIREMIND_EXTENSION_INSTALLED__ || document.documentElement.hasAttribute('data-hiremind-extension')) {
+        setHasExtension(true);
+      }
+    };
+
+    checkExt();
+
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'HIREMIND_EXTENSION_READY' || event.data?.type === 'HIREMIND_PONG') {
+        setHasExtension(true);
+      } else if (event.data?.type === 'HIREMIND_APPLY_ACK') {
+        setHasExtension(true);
+        if (event.data.status === 'error') {
+          console.warn('[Jobs] Extension delegation note:', event.data.error);
+          if (event.data.error && event.data.error.includes('context invalidated')) {
+            setToast({
+              type: 'info',
+              message: 'Extension was reloaded. Please refresh this tab (F5) to use native extension mode. Proceeding with automated background apply...'
+            });
+          }
+          // Automatic seamless fallback to backend auto-apply
+          if (event.data.appId) {
+            try {
+              await api.post(`/applications/${event.data.appId}/auto-fill`);
+            } catch (fallbackErr) {
+              console.error('Fallback auto-fill error:', fallbackErr);
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    window.postMessage({ type: 'HIREMIND_PING' }, '*');
+
+    // Sync current session token with extension
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      window.postMessage({
+        type: 'HIREMIND_SYNC_AUTH',
+        token,
+        serverUrl: window.location.origin.includes('localhost')
+          ? 'http://localhost:8000'
+          : 'https://hiremind-smarter-jobs-better-careers.onrender.com'
+      }, '*');
+    }
+
+    const timer = setTimeout(checkExt, 1000);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      clearTimeout(timer);
+    };
+  }, [])
 
   // Fetch Jobs List with live 1s refetch during active crawling
   const { data: jobs, refetch, isFetching } = useQuery({
@@ -89,19 +150,56 @@ export default function Jobs() {
       if (applyType === 'external' && isQuick) return false;
     }
 
-    // 4. Only filter out Dismissed jobs (Applied, Visited, and Saved jobs stay visible with status badges and revert options)
+    // 4. Filter out Applied, Mail Sent, and Dismissed jobs from active job search
     const appForJob = userApplications?.find((app: any) => 
       (app.job?.job_id === job.job_id || app.job_id === job.id) ||
       (app.company?.trim().toLowerCase() === job.company?.trim().toLowerCase() && 
        app.title?.trim().toLowerCase() === job.title?.trim().toLowerCase())
     );
 
-    if (appForJob && appForJob.status === 'Dismissed') {
-      return false;
+    if (appForJob) {
+      if (appForJob.status === 'Dismissed') {
+        return false;
+      }
+
+      const isAppliedOrMailSent = 
+        appForJob.status === 'Applied' ||
+        appForJob.status === 'Interview' ||
+        appForJob.status === 'Offer' ||
+        appForJob.status === 'Joined' ||
+        (appForJob.notes && (
+          appForJob.notes.toLowerCase().includes('outreach') ||
+          appForJob.notes.toLowerCase().includes('mail') ||
+          appForJob.notes.toLowerCase().includes('email')
+        ));
+
+      if (isAppliedOrMailSent && !showApplied) {
+        return false;
+      }
     }
 
     return true;
   });
+
+  // Calculate count of applied / outreach jobs currently hidden
+  const appliedOrMailSentCount = (jobs || []).filter((job: any) => {
+    const appForJob = userApplications?.find((app: any) => 
+      (app.job?.job_id === job.job_id || app.job_id === job.id) ||
+      (app.company?.trim().toLowerCase() === job.company?.trim().toLowerCase() && 
+       app.title?.trim().toLowerCase() === job.title?.trim().toLowerCase())
+    );
+    return appForJob && (
+      appForJob.status === 'Applied' ||
+      appForJob.status === 'Interview' ||
+      appForJob.status === 'Offer' ||
+      appForJob.status === 'Joined' ||
+      (appForJob.notes && (
+        appForJob.notes.toLowerCase().includes('outreach') ||
+        appForJob.notes.toLowerCase().includes('mail') ||
+        appForJob.notes.toLowerCase().includes('email')
+      ))
+    );
+  }).length;
 
   // Sort: Naukri first, then LinkedIn/Indeed, then Company Website
   const sortedFilteredJobs = [...filteredJobs].sort((a: any, b: any) => {
@@ -262,7 +360,32 @@ export default function Jobs() {
         company: payload.job.company
       })
       
-      // 2. Trigger Playwright auto-apply agent
+      const isExtInstalled = hasExtension || (window as any).__HIREMIND_EXTENSION_INSTALLED__ || document.documentElement.hasAttribute('data-hiremind-extension');
+      
+      if (isExtInstalled) {
+        const token = localStorage.getItem('access_token') || '';
+        const serverUrl = window.location.origin.includes('localhost')
+          ? 'http://localhost:8000'
+          : 'https://hiremind-smarter-jobs-better-careers.onrender.com';
+
+        window.postMessage({
+          type: 'HIREMIND_START_APPLY',
+          appId: appId,
+          job: payload.job,
+          token,
+          serverUrl
+        }, '*');
+
+        return {
+          data: {
+            status: 'started',
+            message: 'Chrome Extension native automation launched in browser tab with your active login!'
+          },
+          job: payload.job
+        };
+      }
+
+      // 2. Fallback to server-side Playwright runner
       const applyResponse = await api.post(`/applications/${appId}/auto-fill`)
       return { data: applyResponse.data, job: payload.job }
     },
@@ -446,6 +569,45 @@ export default function Jobs() {
         </div>
         
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {hasExtension ? (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '9999px',
+                background: 'rgba(34, 197, 94, 0.12)',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                color: '#4ade80',
+                fontSize: '0.82rem',
+                fontWeight: '600'
+              }}
+              title="HireMind Chrome Extension is active! 100% native 1-click apply mode enabled."
+            >
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>
+              <Puzzle size={14} /> Extension Active
+            </div>
+          ) : (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowExtensionModal(true)}
+              style={{
+                borderColor: 'rgba(99, 102, 241, 0.4)',
+                color: '#818cf8',
+                background: 'rgba(99, 102, 241, 0.08)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.82rem',
+                fontWeight: '600'
+              }}
+              title="Click to see how to install the HireMind Chrome Extension for zero-captcha 1-click apply in production"
+            >
+              <Puzzle size={14} /> Chrome Extension
+            </button>
+          )}
+
           <button
             className="btn btn-secondary"
             onClick={() => revertLastMutation.mutate()}
@@ -618,16 +780,28 @@ export default function Jobs() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--glass-border)', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--text-primary)' }}>
-            <input
-              type="checkbox"
-              checked={matchProfile}
-              onChange={(e) => setMatchProfile(e.target.checked)}
-              style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
-            />
-            <span>Match only with my <strong>Resume & Target Roles</strong></span>
-          </label>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--glass-border)', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+              <input
+                type="checkbox"
+                checked={matchProfile}
+                onChange={(e) => setMatchProfile(e.target.checked)}
+                style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
+              />
+              <span>Match only with my <strong>Resume & Target Roles</strong></span>
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+              <input
+                type="checkbox"
+                checked={showApplied}
+                onChange={(e) => setShowApplied(e.target.checked)}
+                style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
+              />
+              <span>Show Applied & Mail Sent Jobs {appliedOrMailSentCount > 0 && <span style={{ marginLeft: '4px', padding: '2px 6px', borderRadius: '9999px', background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', fontSize: '11px', fontWeight: '600' }}>{appliedOrMailSentCount} hidden</span>}</span>
+            </label>
+          </div>
 
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <Calendar size={13} /> Showing <strong>Most Recent Jobs First</strong> across all equal sources
@@ -1007,7 +1181,95 @@ export default function Jobs() {
         company={liveSession.company}
         onClose={() => setLiveSession(prev => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Chrome Extension Setup Modal */}
+      {showExtensionModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--card-bg, #1e293b)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '16px',
+            maxWidth: '520px',
+            width: '100%',
+            padding: '2rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            position: 'relative',
+            color: 'var(--text-primary, #f8fafc)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                }}>
+                  🧩
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: '700', margin: 0 }}>HireMind Chrome Extension</h3>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #94a3b8)', margin: 0 }}>Native 1-Click Production Apply Assistant</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExtensionModal(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.9rem', color: '#cbd5e1', lineHeight: '1.5', marginBottom: '1.25rem' }}>
+              The HireMind Extension drives your browser directly on your computer — completely bypassing Cloudflare, Captchas, and OTP challenges by using your already-logged-in session.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b82f6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', flexShrink: 0 }}>1</span>
+                <span style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>Open <strong>chrome://extensions</strong> in your Google Chrome browser.</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b82f6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', flexShrink: 0 }}>2</span>
+                <span style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>Enable <strong>Developer mode</strong> in the top-right toggle.</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#3b82f6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', flexShrink: 0 }}>3</span>
+                <span style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>Click <strong>Load unpacked</strong> and select the <code>extension</code> folder in your project directory.</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowExtensionModal(false)}
+                style={{ padding: '0.6rem 1.25rem', fontWeight: '600' }}
+              >
+                Got It!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
 

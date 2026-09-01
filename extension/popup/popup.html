@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HireMind AI Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-icon">✨</div>
+        <div>
+          <h1>HireMind AI</h1>
+          <span class="badge">Extension v1.0</span>
+        </div>
+      </div>
+      <div id="connection-badge" class="status-indicator status-offline">
+        <span class="dot"></span>
+        <span id="connection-text">Checking...</span>
+      </div>
+    </header>
+
+    <!-- Account Status Card -->
+    <section class="card account-card">
+      <div class="card-title">Candidate Profile</div>
+      <div id="user-info" class="user-info">
+        <div class="avatar" id="user-avatar">?</div>
+        <div class="user-details">
+          <div id="user-name" class="name">Syncing with HireMind...</div>
+          <div id="user-email" class="email">Open HireMind dashboard to sync</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Apply Tool -->
+    <section class="card">
+      <div class="card-title">1-Click Job Apply</div>
+      <p class="subtitle">Navigate to any Naukri/LinkedIn job page or paste the link below:</p>
+      <div class="input-group">
+        <input type="text" id="quick-url-input" placeholder="Paste job URL (Naukri / LinkedIn)...">
+        <button id="quick-apply-btn" class="btn btn-primary">Apply</button>
+      </div>
+    </section>
+
+    <!-- Configuration Settings -->
+    <section class="card settings-card">
+      <div class="card-header-row">
+        <div class="card-title">Server Connection</div>
+        <button id="toggle-settings-btn" class="btn-text">Settings ⚙️</button>
+      </div>
+      <div id="settings-drawer" class="settings-drawer hidden">
+        <label for="server-url-input">Backend API URL:</label>
+        <input type="text" id="server-url-input" placeholder="https://hiremind-smarter-jobs-better-careers.onrender.com">
+        <div class="btn-row">
+          <button id="set-prod-btn" class="btn btn-sm btn-secondary">Production</button>
+          <button id="set-local-btn" class="btn btn-sm btn-secondary">Local (8000)</button>
+          <button id="save-server-btn" class="btn btn-sm btn-primary">Save</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer Links -->
+    <footer class="footer">
+      <button id="open-dashboard-btn" class="btn btn-gradient">Open HireMind Web App ↗</button>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

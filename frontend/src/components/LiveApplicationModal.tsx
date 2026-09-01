@@ -30,7 +30,30 @@ export default function LiveApplicationModal({
   const [currentStep, setCurrentStep] = useState('Initializing Application...')
   const [isFinished, setIsFinished] = useState(false)
   const [hasError, setHasError] = useState(false)
+  const [countdown, setCountdown] = useState<number | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
+
+  // 5-Second Auto-close timer on completion
+  useEffect(() => {
+    if (!isFinished) {
+      setCountdown(null)
+      return
+    }
+
+    setCountdown(5)
+    const interval = setInterval(() => {
+      setCountdown(prev => (prev !== null && prev > 1 ? prev - 1 : 0))
+    }, 1000)
+
+    const timeout = setTimeout(() => {
+      onClose()
+    }, 5000)
+
+    return () => {
+      clearInterval(interval)
+      clearTimeout(timeout)
+    }
+  }, [isFinished, onClose])
 
   useEffect(() => {
     if (!isOpen || !appId) {
@@ -39,6 +62,7 @@ export default function LiveApplicationModal({
       setCurrentStep('Initializing Application...')
       setIsFinished(false)
       setHasError(false)
+      setCountdown(null)
       return
     }
 
@@ -55,7 +79,7 @@ export default function LiveApplicationModal({
           setProgress(latest.progress || 10)
           setCurrentStep(latest.status_text || latest.step)
           if (latest.is_error) setHasError(true)
-          if (latest.progress >= 100 || latest.step === 'Completed' || latest.step === 'Prepared' || latest.step === 'Failed') {
+          if (latest.progress >= 100 || latest.step === 'Completed' || latest.step === 'Prepared' || latest.step === 'Failed' || latest.step === 'Applied' || latest.step === 'Already Applied') {
             setIsFinished(true)
           }
 
@@ -310,9 +334,9 @@ export default function LiveApplicationModal({
           <button
             onClick={onClose}
             className="btn btn-secondary"
-            style={{ padding: '0.5rem 1.25rem' }}
+            style={{ padding: '0.5rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
           >
-            {isFinished ? 'Close' : 'Minimize Session'}
+            {countdown !== null ? `Auto-minimizing in ${countdown}s` : (isFinished ? 'Close' : 'Minimize Session')}
           </button>
         </div>
       </div>

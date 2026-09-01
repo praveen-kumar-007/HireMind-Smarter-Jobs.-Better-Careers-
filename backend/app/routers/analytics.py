@@ -11,6 +11,7 @@ from app.routers.deps import get_current_user
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("")
+@router.get("/")
 def get_analytics_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)

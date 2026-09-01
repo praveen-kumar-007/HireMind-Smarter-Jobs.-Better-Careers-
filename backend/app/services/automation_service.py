@@ -644,14 +644,14 @@ class BrowserManager:
             self.log_event(db, app.id, "No Apply Button", 100, f"Could not find a clickable Apply button on the page for {app.job.title}. Saving for manual review.")
             return {"status": "manual_apply_required", "message": f"No Apply button found for '{app.job.title}'. Left for manual application."}
 
-        # After clicking apply, wait 2.5 seconds for page response / modal to load
-        self.log_event(db, app.id, "Waiting for Form", 75, "Checking if application was submitted directly or requires screening questions...")
-        page.wait_for_timeout(2500)
+        # After clicking apply, wait 5 seconds for page response / modal to load
+        self.log_event(db, app.id, "Waiting for Form", 75, "Waiting 5 seconds for page response / screening questions...")
+        page.wait_for_timeout(5000)
 
         # 1. IMMEDIATE CONFIRMATION CHECK: If 1-Click applied without screening questions, complete immediately!
         if self._is_naukri_already_applied(page):
             self.log_event(db, app.id, "Applied", 100, f"Application confirmed! 1-Click Apply completed for '{app.job.title}' on {app.job.company}.")
-            return {"status": "success", "message": "Application submitted and confirmed!"}
+            return {"status": "success", "message": "Successfully Applied"}
 
         # 2. Handle Naukri Chatbot Questionnaire Drawer if present and active
         has_questions = self._handle_naukri_chatbot_and_questions(page, resume_data, db, app)

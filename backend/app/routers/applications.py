@@ -7,8 +7,15 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.job import Job, JobSkill
 from app.models.resume import Resume, ResumeVersion
-from app.models.application import Application, ApplicationAnswer, ApplicationEvent
-from app.schemas.application import ApplicationCreate, ApplicationUpdate, ApplicationResponse, ApplicationAnswerCreate
+from app.models.application import Application, ApplicationAnswer, ApplicationEvent, AuditLog
+from app.schemas.application import (
+    ApplicationCreate, 
+    ApplicationUpdate, 
+    ApplicationResponse, 
+    ApplicationAnswerCreate,
+    ApplicationEventCreate,
+    ApplicationStatusUpdate
+)
 from app.routers.deps import get_current_user
 from app.services.ai_service import ai_service
 from app.services.automation_service import browser_manager
@@ -665,3 +672,129 @@ def generate_ai_qa_answer(
         "answer": answer,
         "max_words": request.max_words
     }
+
+@router.get("/{app_id}/extension-context")
+def get_extension_application_context(
+    app_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve full job and candidate context for the Chrome Extension automation agent."""
+    app = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == current_user.id
+    ).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    profile = current_user.profile
+    latest_resume = db.query(ResumeVersion).join(Resume).filter(
+        Resume.user_id == current_user.id,
+        Resume.is_active == True
+    ).order_by(ResumeVersion.id.desc()).first()
+
+    parsed = latest_resume.parsed_data if (latest_resume and latest_resume.parsed_data) else {}
+    
+    # Candidate details
+    candidate_info = {
+        "full_name": (profile.full_name if profile and profile.full_name else parsed.get("name", "Applicant")),
+        "email": current_user.email,
+        "phone": (profile.phone if profile and profile.phone else parsed.get("phone", "")),
+        "location": (profile.location if profile and profile.location else parsed.get("location", "")),
+        "notice_period": (profile.notice_period if profile and profile.notice_period else "Immediate"),
+        "salary_expectation": (profile.salary_expectation if profile and profile.salary_expectation else "Negotiable"),
+        "linkedin": (profile.linkedin if profile and profile.linkedin else ""),
+        "github": (profile.github if profile and profile.github else ""),
+        "portfolio": (profile.portfolio if profile and profile.portfolio else ""),
+        "work_authorization": (profile.work_authorization if profile and profile.work_authorization else "authorized"),
+        "skills": parsed.get("skills", []),
+        "experience_years": parsed.get("total_experience", 2),
+        "current_ctc": profile.salary_expectation if profile and profile.salary_expectation else "5,00,000 INR",
+        "expected_ctc": profile.salary_expectation if profile and profile.salary_expectation else "8,00,000 INR"
+    }
+
+    job_info = {
+        "id": app.job.id if app.job else app.job_id,
+        "title": app.job.title if app.job else app.title,
+        "company": app.job.company if app.job else app.company,
+        "url": app.job.url if app.job else "",
+        "source": app.job.source if app.job else app.source,
+        "location": app.job.location if app.job else "",
+        "description": app.job.description if app.job else "",
+        "skills": [s.name for s in app.job.skills] if (app.job and app.job.skills) else []
+    }
+
+    return {
+        "app_id": app.id,
+        "job": job_info,
+        "candidate": candidate_info,
+        "resume_data": parsed
+    }
+
+@router.post("/{app_id}/events")
+def log_extension_event(
+    app_id: int,
+    request: ApplicationEventCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Log real-time application step event from the Chrome Extension into telemetry stream."""
+    app = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == current_user.id
+    ).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    event = ApplicationEvent(
+        application_id=app.id,
+        step=request.step,
+        progress=request.progress,
+        status_text=request.status_text,
+        is_error=request.is_error
+    )
+    db.add(event)
+
+    audit = AuditLog(
+        user_id=current_user.id,
+        event=request.step,
+        details=request.status_text
+    )
+    db.add(audit)
+    db.commit()
+
+    return {"status": "logged", "event_id": event.id}
+
+@router.patch("/{app_id}/status")
+def update_extension_application_status(
+    app_id: int,
+    request: ApplicationStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update application final status and audit notes from Chrome Extension."""
+    import datetime
+    app = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == current_user.id
+    ).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    app.status = request.status
+    if request.notes:
+        app.notes = request.notes
+    if request.status == "Applied":
+        app.applied_date = datetime.datetime.utcnow()
+
+    audit = AuditLog(
+        user_id=current_user.id,
+        event=f"Status Updated to {request.status}",
+        details=request.notes or f"Application status changed to {request.status} via Chrome Extension."
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(app)
+
+    return {"status": "updated", "app_status": app.status, "notes": app.notes}
+

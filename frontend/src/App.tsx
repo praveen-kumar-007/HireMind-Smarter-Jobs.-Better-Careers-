@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
@@ -14,11 +14,39 @@ import AllApplied from './pages/AllApplied'
 import ManualIntervention from './pages/ManualIntervention'
 import QABank from './pages/QABank'
 import { Menu, X } from 'lucide-react'
+import api from './services/api'
 
 // Guarded Route component checking for JWT tokens
 function ProtectedLayout({ onLogout }: { onLogout: () => void }) {
   const token = localStorage.getItem('access_token')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Auto-sync authenticated profile with HireMind Chrome Extension
+  useEffect(() => {
+    const syncExtension = async () => {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+      
+      let user = null;
+      try {
+        const res = await api.get('/auth/me');
+        user = res.data;
+      } catch (e) {}
+
+      window.postMessage({
+        type: 'HIREMIND_SYNC_AUTH',
+        token,
+        user,
+        serverUrl: window.location.origin.includes('localhost')
+          ? 'http://localhost:8000'
+          : 'https://hiremind-smarter-jobs-better-careers.onrender.com'
+      }, '*');
+    };
+
+    syncExtension();
+    const interval = setInterval(syncExtension, 20000);
+    return () => clearInterval(interval);
+  }, [token]);
   
   if (!token) {
     return <Navigate to="/login" replace />
