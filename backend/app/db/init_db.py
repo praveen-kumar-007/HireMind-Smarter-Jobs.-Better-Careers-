@@ -11,34 +11,54 @@ def init_db(db: Session) -> None:
     # Create all tables if they don't exist
     Base.metadata.create_all(bind=engine)
     
-    # Check for seed admin user
-    admin = db.query(User).filter(User.email == "admin@example.com").first()
-    if not admin:
+    # Check for primary user praveen.pr105@gmail.com
+    primary_email = "praveen.pr105@gmail.com"
+    
+    # Migrate any old admin user if present
+    old_admin = db.query(User).filter(User.email == "admin@example.com").first()
+    if old_admin:
+        old_admin.email = primary_email
+        db.commit()
+        db.refresh(old_admin)
+    
+    user = db.query(User).filter(User.email == primary_email).first()
+    if not user:
         hashed_password = pwd_context.hash("admin123")
-        admin_user = User(
-            email="admin@example.com",
+        user = User(
+            email=primary_email,
             hashed_password=hashed_password,
-            role="admin",
+            role="user",
             is_active=True
         )
-        db.add(admin_user)
+        db.add(user)
         db.commit()
-        db.refresh(admin_user)
+        db.refresh(user)
 
-        # Create empty profile for admin
-        admin_profile = Profile(
-            user_id=admin_user.id,
-            full_name="Administrator",
-            target_roles=["Administrator"],
-            preferred_locations=["Remote"]
+        # Create fresh profile
+        profile = Profile(
+            user_id=user.id,
+            full_name="Praveen Kumar",
+            phone="+91 9504904499",
+            location="Dhanbad, India",
+            experience_level="junior", # Fresher / Entry Level
+            target_roles=["Software Engineer (Fresher)", "Full Stack Developer", "Python Developer", "AI/ML Engineer"],
+            preferred_locations=["Bengaluru", "Hyderabad", "Pune", "Remote", "Dhanbad"],
+            remote_preference="any",
+            work_authorization="authorized",
+            notice_period="immediate",
+            salary_expectation="₹6.0 - ₹12.0 LPA",
+            test_mode=True,
+            max_applications_per_day=20,
+            github="https://github.com/praveen-kumar-007",
+            linkedin="https://www.linkedin.com/in/praveen105"
         )
-        db.add(admin_profile)
+        db.add(profile)
         db.commit()
 
-    # Seed using Resume Praveen Kumar.html
-    admin = db.query(User).filter(User.email == "admin@example.com").first()
-    if admin:
-        resume_loaded = db.query(Resume).filter(Resume.user_id == admin.id).first()
+    # Seed using Resume Praveen Kumar.html for primary user
+    user = db.query(User).filter(User.email == primary_email).first()
+    if user:
+        resume_loaded = db.query(Resume).filter(Resume.user_id == user.id).first()
         if not resume_loaded:
             import os
             from app.services.resume_service import resume_service
@@ -166,17 +186,19 @@ def init_db(db: Session) -> None:
                         ]
                     }
                     
-                    # Force populate admin profile details
-                    profile = db.query(Profile).filter(Profile.user_id == admin.id).first()
+                    # Force populate user profile details
+                    profile = db.query(Profile).filter(Profile.user_id == user.id).first()
                     if profile:
                         profile.full_name = parsed_data["name"]
                         profile.phone = parsed_data["phone"]
                         profile.location = parsed_data["location"]
-                        profile.target_roles = ["Machine Learning", "Full Stack Developer", "Python Developer"]
-                        profile.preferred_locations = ["Dhanbad", "Remote", "Varanasi"]
+                        profile.experience_level = "junior" # Fresher
+                        profile.target_roles = ["Software Engineer (Fresher)", "Full Stack Developer", "Python Developer", "AI/ML Engineer"]
+                        profile.preferred_locations = ["Bengaluru", "Hyderabad", "Pune", "Remote", "Dhanbad"]
                         db.commit()
                         
-                    resume_service.save_parsed_resume(db, admin.id, html_path, parsed_data)
-                    logging.getLogger(__name__).info("Seeded Resume Praveen Kumar.html successfully on startup.")
+                    resume_service.save_parsed_resume(db, user.id, html_path, parsed_data)
+                    logging.getLogger(__name__).info("Seeded Resume Praveen Kumar.html successfully for praveen.pr105@gmail.com on startup.")
                 except Exception as e:
                     logging.getLogger(__name__).error(f"Failed to auto-seed Resume Praveen Kumar.html: {e}")
+

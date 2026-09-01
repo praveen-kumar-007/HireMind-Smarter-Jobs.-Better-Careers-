@@ -100,6 +100,18 @@ export default function Sidebar({ onLogout, isOpen, onClose }: SidebarProps) {
             <span>Settings</span>
           </NavLink>
         </li>
+        <li>
+          <NavLink 
+            to="/admin/users" 
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} 
+            onClick={handleLinkClick}
+            style={{ color: '#818CF8', fontWeight: '600' }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+              🛡️ <span>User Approvals</span>
+            </span>
+          </NavLink>
+        </li>
       </ul>
       
       <div style={{ marginTop: 'auto' }}>

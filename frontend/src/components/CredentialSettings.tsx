@@ -118,12 +118,6 @@ export default function CredentialSettings() {
               style={{ background: 'var(--bg-tertiary)' }}
             >
               <option value="naukri">Naukri</option>
-              <option value="linkedin">LinkedIn</option>
-              <option value="indeed">Indeed</option>
-              <option value="foundit">Foundit</option>
-              <option value="workindia">WorkIndia</option>
-              <option value="cutshort">Cutshort</option>
-              <option value="instahyre">Instahyre</option>
               <option value="email_imap">Email Inbox (IMAP OTP Reader)</option>
               <option value="email_smtp">Cold Email Outreach (SMTP Server)</option>
             </select>

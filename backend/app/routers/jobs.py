@@ -24,7 +24,7 @@ from app.models.job import JobSkill
 def get_jobs(
     search: Optional[str] = Query(None, description="Search by title, company or skills"),
     location: Optional[str] = Query(None, description="Filter by location"),
-    source: Optional[str] = Query(None, description="Filter by source board (e.g. LinkedIn, Naukri)"),
+    source: Optional[str] = Query(None, description="Filter by source board (e.g. Naukri)"),
     match_profile: bool = Query(False, description="Prioritize jobs matching user profile and resume keywords"),
     trigger_scan: bool = Query(False, description="If true, trigger live job crawler before returning"),
     db: Session = Depends(get_db),
@@ -33,7 +33,7 @@ def get_jobs(
     import binascii
     import datetime
     from app.models.application import Application
-    ALLOWED_SOURCES = ["LinkedIn", "Naukri", "Company Website"]
+    ALLOWED_SOURCES = ["Naukri"]
 
     # 1. Trigger live crawler scan if requested
     if trigger_scan:
@@ -366,6 +366,40 @@ def get_job_by_id(
             detail="Job listing not found."
         )
     return job
+
+
+@router.delete("/{job_id}")
+def delete_expired_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Permanently delete an expired/invalid job from the database, along with any related applications."""
+    from app.models.application import Application, ApplicationAnswer, ApplicationEvent
+    
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        return {"status": "not_found", "message": f"Job #{job_id} not found in database."}
+    
+    job_title = job.title
+    job_company = job.company
+    
+    # Delete related applications, answers, and events
+    related_apps = db.query(Application).filter(Application.job_id == job_id).all()
+    for app in related_apps:
+        db.query(ApplicationAnswer).filter(ApplicationAnswer.application_id == app.id).delete()
+        db.query(ApplicationEvent).filter(ApplicationEvent.application_id == app.id).delete()
+        db.delete(app)
+    
+    # Delete the job itself
+    db.delete(job)
+    db.commit()
+    
+    logger.info(f"[Expired] Permanently deleted job #{job_id}: '{job_title}' at {job_company}")
+    return {
+        "status": "deleted",
+        "message": f"Permanently removed expired job '{job_title}' at {job_company} and {len(related_apps)} related application(s)."
+    }
 
 from pydantic import BaseModel
 

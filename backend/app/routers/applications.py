@@ -18,6 +18,8 @@ from app.schemas.application import (
 )
 from app.routers.deps import get_current_user
 from app.services.ai_service import ai_service
+from app.services.rag_service import rag_service
+from app.services.crawl_ai_service import crawl_ai_service
 from app.services.automation_service import browser_manager
 
 logger = logging.getLogger(__name__)
@@ -153,11 +155,13 @@ def revert_application_by_job(
     """Reverts an application by job_id, removing Application, Answers, and Events so the job is back in clean unapplied state."""
     job = db.query(Job).filter(Job.id == job_id).first()
     
+    # Strategy 1: Direct job_id match
     apps = db.query(Application).filter(
         Application.user_id == current_user.id,
         Application.job_id == job_id
     ).all()
 
+    # Strategy 2: Match by company + title from the Job record
     if not apps and job:
         apps = db.query(Application).filter(
             Application.user_id == current_user.id,
@@ -165,6 +169,7 @@ def revert_application_by_job(
             func.lower(Application.title) == func.lower(job.title)
         ).all()
 
+    # Strategy 3: Try application.id == job_id (legacy fallback)
     if not apps:
         app_by_id = db.query(Application).filter(
             Application.id == job_id,
@@ -172,6 +177,16 @@ def revert_application_by_job(
         ).first()
         if app_by_id:
             apps = [app_by_id]
+
+    # Strategy 4: Fuzzy match - find any application whose title/company partially matches the job
+    if not apps and job:
+        all_user_apps = db.query(Application).filter(
+            Application.user_id == current_user.id
+        ).all()
+        for a in all_user_apps:
+            if (a.company and job.company and a.company.lower().strip() in job.company.lower().strip()) or \
+               (a.title and job.title and a.title.lower().strip() in job.title.lower().strip()):
+                apps.append(a)
 
     if not apps:
         return {"status": "not_found", "message": f"No application record found to revert for job #{job_id}."}
@@ -216,6 +231,32 @@ def revert_last_application(
         "message": f"Undone application for '{tit}' at {comp}. Status restored to unapplied."
     }
 
+@router.post("/revert-all")
+def revert_all_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Reverts ALL applications for the current user, clearing the entire applied history."""
+    apps = db.query(Application).filter(
+        Application.user_id == current_user.id
+    ).all()
+    
+    if not apps:
+        return {"status": "not_found", "message": "No applications found to clear.", "cleared_count": 0}
+    
+    count = len(apps)
+    for app in apps:
+        db.query(ApplicationAnswer).filter(ApplicationAnswer.application_id == app.id).delete()
+        db.query(ApplicationEvent).filter(ApplicationEvent.application_id == app.id).delete()
+        db.delete(app)
+    
+    db.commit()
+    return {
+        "status": "reverted",
+        "cleared_count": count,
+        "message": f"Successfully cleared {count} application(s). All jobs restored to unapplied state."
+    }
+
 @router.post("/{app_id}/answer", response_model=ApplicationResponse)
 def generate_custom_screening_answer(
     app_id: int,
@@ -230,25 +271,16 @@ def generate_custom_screening_answer(
     if not app:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    resume = db.query(Resume).filter(Resume.user_id == current_user.id, Resume.is_active == True).first()
-    if not resume:
-        raise HTTPException(status_code=400, detail="No resume uploaded yet.")
-
-    latest_version = db.query(ResumeVersion).filter(ResumeVersion.resume_id == resume.id).order_by(ResumeVersion.version.desc()).first()
-    if not latest_version:
-        raise HTTPException(status_code=400, detail="No resume version parsed yet.")
-
-    primary_model = current_user.profile.primary_model or "qwen3:8b"
-    temp = current_user.profile.ai_temperature or 0.7
-    timeout = current_user.profile.ai_timeout or 120
-    answer = ai_service.generate_answers(
-        resume_data=latest_version.parsed_data,
-        job_title=app.job.title,
-        job_description=app.job.description or "",
+    primary_model = current_user.profile.primary_model if current_user.profile else None
+    
+    # Use Advanced RAG Engine with semantic resume vector retrieval and hypothetical reasoning
+    answer = rag_service.generate_rag_answer(
+        db=db,
+        user_id=current_user.id,
         question=request.question,
-        model_override=primary_model,
-        temperature=temp,
-        timeout_override=timeout
+        job_title=app.job.title if app.job else (app.title or "Software Developer"),
+        job_description=app.job.description if app.job else "",
+        model_override=primary_model
     )
 
     if "requires_user_input" in answer:
@@ -629,48 +661,62 @@ def delete_qa_answer(
     db.commit()
     return {"status": "success", "message": "Question/Answer record removed."}
 
+class CrawlJobRequest(BaseModel):
+    url: str
+
 @router.post("/qa/generate")
 def generate_ai_qa_answer(
     request: QAGenerateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Generate a high-quality tailored answer using Groq LPU / Gemini AI adhering to word count constraints."""
-    # Get active resume data
-    resume_data = {}
-    active_resume = db.query(Resume).filter(Resume.user_id == current_user.id, Resume.is_active == True).first()
-    if active_resume:
-        latest_ver = db.query(ResumeVersion).filter(ResumeVersion.resume_id == active_resume.id).order_by(ResumeVersion.version.desc()).first()
-        if latest_ver and latest_ver.parsed_data:
-            resume_data = latest_ver.parsed_data
+    """Generate a high-quality tailored answer using RAG semantic resume vector retrieval and hypothetical reasoning."""
+    primary_model = current_user.profile.primary_model if current_user.profile else None
 
-    # Add profile metadata
-    profile = current_user.profile
-    if profile:
-        if profile.full_name:
-            resume_data["name"] = profile.full_name
-        if profile.location:
-            resume_data["location"] = profile.location
-        if profile.notice_period:
-            resume_data["notice_period"] = profile.notice_period
-        if profile.phone:
-            resume_data["phone"] = profile.phone
-
-    question_prompt = request.question
-    if request.max_words and request.max_words > 0:
-        question_prompt += f" Provide your answer strictly within {request.max_words} words or less in first person."
-
-    answer = ai_service.generate_answers(
-        resume_data=resume_data,
+    # Use RAG engine to generate authentic, candidate-grounded answers
+    answer = rag_service.generate_rag_answer(
+        db=db,
+        user_id=current_user.id,
+        question=request.question,
         job_title=request.job_title or "Software Developer",
         job_description=request.job_description or "",
-        question=question_prompt
+        model_override=primary_model
     )
 
     return {
         "question": request.question,
         "answer": answer,
         "max_words": request.max_words
+    }
+
+@router.post("/rag/vectorize")
+def vectorize_candidate_resume_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Vectorize or refresh the candidate's resume semantic embeddings for RAG retrieval."""
+    chunk_count = rag_service.vectorize_candidate_resume(db, current_user.id)
+    return {
+        "status": "success",
+        "message": f"Successfully vectorized {chunk_count} resume chunks for semantic RAG.",
+        "user_id": current_user.id,
+        "chunks_indexed": chunk_count
+    }
+
+@router.post("/crawl/extract")
+async def crawl_job_listing_endpoint(
+    request: CrawlJobRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Crawl any job listing URL and extract structured job requirements using Crawl AI."""
+    if not request.url:
+        raise HTTPException(status_code=400, detail="Job URL is required.")
+
+    crawled_data = await crawl_ai_service.crawl_job_url(request.url)
+    return {
+        "status": "success",
+        "data": crawled_data
     }
 
 @router.get("/{app_id}/extension-context")
@@ -797,4 +843,61 @@ def update_extension_application_status(
     db.refresh(app)
 
     return {"status": "updated", "app_status": app.status, "notes": app.notes}
+
+@router.post("/auto-apply-all")
+def auto_apply_all_jobs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Applies to all unapplied jobs for the candidate.
+    Creates applications, records telemetry events, and updates statuses.
+    """
+    import datetime
+    
+    existing_job_ids = [
+        app.job_id for app in db.query(Application.job_id).filter(
+            Application.user_id == current_user.id,
+            Application.status.in_(["Applied", "Ready", "Review Required"])
+        ).all()
+    ]
+    
+    candidate_jobs = db.query(Job).filter(
+        ~Job.id.in_(existing_job_ids) if existing_job_ids else True
+    ).limit(15).all()
+
+    if not candidate_jobs:
+        return {"status": "ok", "applied_count": 0, "message": "All current matched jobs are already applied!"}
+
+    applied_count = 0
+    for job in candidate_jobs:
+        app = Application(
+            user_id=current_user.id,
+            job_id=job.id,
+            company=job.company,
+            title=job.title,
+            source=job.source,
+            status="Applied",
+            applied_date=datetime.datetime.utcnow(),
+            notes="Applied via HireMind AI Automator."
+        )
+        db.add(app)
+        db.flush()
+
+        event = ApplicationEvent(
+            application_id=app.id,
+            step="Applied",
+            progress=100,
+            status_text=f"Auto-applied to {job.title} at {job.company}."
+        )
+        db.add(event)
+        applied_count += 1
+
+    db.commit()
+    return {
+        "status": "ok",
+        "applied_count": applied_count,
+        "message": f"Successfully applied to {applied_count} jobs!"
+    }
+
 

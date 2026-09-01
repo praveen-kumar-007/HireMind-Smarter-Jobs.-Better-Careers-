@@ -30,6 +30,10 @@ export default function Settings() {
   const [excludedJobTitles, setExcludedJobTitles] = useState('')
 
   
+  const [github, setGithub] = useState('')
+  const [linkedin, setLinkedin] = useState('')
+  const [portfolio, setPortfolio] = useState('')
+  
   const queryClient = useQueryClient()
 
   // Fetch current user details
@@ -48,10 +52,13 @@ export default function Settings() {
       setFullName(p.full_name || '')
       setPhone(p.phone || '')
       setLocation(p.location || '')
+      setGithub(p.github || '')
+      setLinkedin(p.linkedin || '')
+      setPortfolio(p.portfolio || '')
       setTargetRoles(p.target_roles?.join(', ') || '')
       setPreferredLocations(p.preferred_locations?.join(', ') || '')
       setRemotePreference(p.remote_preference || 'any')
-      setExperienceLevel(p.experience_level || 'any')
+      setExperienceLevel(p.experience_level || 'junior')
       setMinSalary(p.min_salary ?? '')
       setMinMatchPercentage(p.min_match_percentage ?? 60)
       setPrimaryModel(p.primary_model || 'qwen3:8b')
@@ -61,7 +68,7 @@ export default function Settings() {
       
       // Sync automation parameters
       setTestMode(p.test_mode ?? true)
-      setMaxApplicationsPerDay(p.max_applications_per_day ?? 10)
+      setMaxApplicationsPerDay(p.max_applications_per_day ?? 20)
       setNoticePeriod(p.notice_period || 'immediate')
       setSalaryExpectation(p.salary_expectation || '')
       setWorkAuthorization(p.work_authorization || 'authorized')
@@ -78,7 +85,7 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['me'] })
-      alert("Settings saved successfully!")
+      alert("Settings and Fresher Profile saved successfully!")
     },
     onError: (err: any) => {
       alert(err.response?.data?.detail || "Failed to update profile settings.")
@@ -98,20 +105,23 @@ export default function Settings() {
       full_name: fullName || null,
       phone: phone || null,
       location: location || null,
+      github: github || null,
+      linkedin: linkedin || null,
+      portfolio: portfolio || null,
       target_roles: rolesArray,
       preferred_locations: locationsArray,
       remote_preference: remotePreference,
       experience_level: experienceLevel,
-      min_salary: minSalary !== '' ? Number(minSalary) : null,
-      min_match_percentage: Number(minMatchPercentage),
+      min_salary: minSalary === '' ? null : Number(minSalary),
+      min_match_percentage: minMatchPercentage,
       primary_model: primaryModel,
       fast_model: fastModel,
-      ai_temperature: Number(aiTemperature),
-      ai_timeout: Number(aiTimeout),
+      ai_temperature: aiTemperature,
+      ai_timeout: aiTimeout,
       test_mode: testMode,
       max_applications_per_day: Number(maxApplicationsPerDay),
       notice_period: noticePeriod,
-      salary_expectation: salaryExpectation || null,
+      salary_expectation: salaryExpectation,
       work_authorization: workAuthorization,
       excluded_companies: exclCompaniesArray,
       excluded_job_titles: exclTitlesArray
@@ -126,9 +136,27 @@ export default function Settings() {
 
   return (
     <div>
-      <div style={{ marginBottom: '2.5rem' }}>
-        <h1 style={{ fontSize: '2.25rem', fontFamily: 'var(--font-display)', marginBottom: '0.5rem' }}>User Settings</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>Configure target roles, salary, remote preferences, and customize match score thresholds.</p>
+      <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h1 style={{ fontSize: '2.25rem', fontFamily: 'var(--font-display)', marginBottom: '0.5rem' }}>Profile & Career Settings</h1>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            Logged in as <strong style={{ color: 'var(--primary)' }}>{user?.email || 'User'}</strong> | Manage candidate info, Fresher status, skills, and target roles.
+          </p>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <span style={{ 
+            padding: '0.4rem 0.85rem', 
+            borderRadius: '20px', 
+            fontSize: '0.85rem', 
+            fontWeight: '700',
+            background: experienceLevel === 'junior' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+            color: experienceLevel === 'junior' ? '#10B981' : '#6366F1',
+            border: `1px solid ${experienceLevel === 'junior' ? '#10B981' : '#6366F1'}`
+          }}>
+            {experienceLevel === 'junior' ? '🎓 Fresher (0-1 Yrs)' : experienceLevel === 'mid' ? '💼 Mid-Level' : experienceLevel === 'senior' ? '⭐ Senior' : '🌐 Open Level'}
+          </span>
+        </div>
       </div>
 
       <form onSubmit={handleSaveSubmit}>
@@ -138,7 +166,7 @@ export default function Settings() {
           <div className="card" style={{ height: 'fit-content' }}>
             <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <User size={18} style={{ color: 'var(--primary)' }} />
-              Contact Information
+              Personal & Online Profiles
             </h3>
             
             <div className="form-group">
@@ -168,6 +196,39 @@ export default function Settings() {
                 className="form-input" 
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">GitHub URL</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="https://github.com/..." 
+                value={github}
+                onChange={(e) => setGithub(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">LinkedIn URL</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="https://www.linkedin.com/in/..." 
+                value={linkedin}
+                onChange={(e) => setLinkedin(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Portfolio / Website</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="https://..." 
+                value={portfolio}
+                onChange={(e) => setPortfolio(e.target.value)}
               />
             </div>
           </div>

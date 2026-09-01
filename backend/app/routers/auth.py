@@ -19,13 +19,16 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
             detail="A user with this email already exists.",
         )
     
-    # Create new user
+    # Create new user (praveen.pr105@gmail.com is auto-approved as superadmin; other users require Praveen's approval)
     hashed_password = get_password_hash(user_in.password)
+    is_primary = (user_in.email.lower().strip() == "praveen.pr105@gmail.com")
+    
     new_user = User(
         email=user_in.email,
         hashed_password=hashed_password,
-        role="user",
-        is_active=True
+        role="admin" if is_primary else "user",
+        is_active=True,
+        is_approved=True if is_primary else False
     )
     db.add(new_user)
     db.commit()
@@ -54,8 +57,16 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         )
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User account is inactive",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is deactivated. Please contact Praveen (praveen.pr105@gmail.com).",
+        )
+    
+    # Approval check: Only praveen.pr105@gmail.com is pre-authorized; all other candidates require Praveen's approval
+    is_praveen = (user.email.lower().strip() == "praveen.pr105@gmail.com")
+    if not is_praveen and not bool(user.is_approved):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is awaiting administrator approval. Please wait for Praveen (praveen.pr105@gmail.com) to approve your signup before logging in.",
         )
     
     # Generate tokens

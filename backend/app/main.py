@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.db.init_db import init_db
-from app.routers import auth, resume, jobs, match, applications, analytics, ai, credentials, outreach
+from app.routers import auth, resume, jobs, match, applications, analytics, ai, credentials, outreach, admin
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app.main")
@@ -12,7 +12,7 @@ logger = logging.getLogger("app.main")
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Production-ready AI-powered Job Assistant platform backend.",
-    version="1.2.0"
+    version="1.3.0"
 )
 
 # CORS Configuration
@@ -51,6 +51,7 @@ def on_startup():
 
 # Router Mounts
 app.include_router(auth.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 app.include_router(resume.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(match.router, prefix="/api")

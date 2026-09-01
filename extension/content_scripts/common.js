@@ -188,6 +188,14 @@ const HireMindCommon = {
       status,
       notes
     });
+  },
+
+  /**
+   * Permanently delete an expired job from the database
+   */
+  async deleteExpiredJob(jobId) {
+    console.log(`[HireMind] Sending DELETE_EXPIRED_JOB for job #${jobId}`);
+    return this.sendMessage('DELETE_EXPIRED_JOB', { jobId });
   }
 };
 

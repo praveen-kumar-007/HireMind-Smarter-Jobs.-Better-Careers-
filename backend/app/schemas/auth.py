@@ -62,7 +62,9 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: str
     is_active: bool
+    is_approved: bool = True
     profile: Optional[ProfileResponse] = None
 
     class Config:
         from_attributes = True
+

@@ -11,6 +11,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(50), default="user") # user, admin
     is_active = Column(Boolean, default=True)
+    is_approved = Column(Boolean, default=False) # Requires admin approval before login
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relationships

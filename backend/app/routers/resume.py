@@ -96,6 +96,10 @@ def update_resume_version_data(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    from app.models.resume import Skill, Education, Experience, Project
+    from app.models.user import Profile
+    from app.services.rag_service import rag_service
+
     # Fetch resume version
     version = db.query(ResumeVersion).join(Resume).filter(
         ResumeVersion.id == version_id,
@@ -109,10 +113,81 @@ def update_resume_version_data(
         )
         
     version.parsed_data = parsed_data_update
+
+    # 1. Synchronize relational skills
+    db.query(Skill).filter(Skill.resume_version_id == version.id).delete()
+    for s in parsed_data_update.get("skills", []):
+        if isinstance(s, str) and s.strip():
+            db.add(Skill(resume_version_id=version.id, name=s.strip()))
+        elif isinstance(s, dict) and s.get("name"):
+            db.add(Skill(resume_version_id=version.id, name=s["name"].strip(), category=s.get("category")))
+
+    # 2. Synchronize relational education
+    db.query(Education).filter(Education.resume_version_id == version.id).delete()
+    for edu in parsed_data_update.get("education", []):
+        if isinstance(edu, dict):
+            db.add(Education(
+                resume_version_id=version.id,
+                institution=edu.get("institution", ""),
+                degree=edu.get("degree", ""),
+                field_of_study=edu.get("field_of_study", ""),
+                start_date=str(edu.get("start_date", "")),
+                end_date=str(edu.get("end_date", "")),
+                gpa=str(edu.get("gpa", ""))
+            ))
+
+    # 3. Synchronize relational experience
+    db.query(Experience).filter(Experience.resume_version_id == version.id).delete()
+    for exp in parsed_data_update.get("experience", []):
+        if isinstance(exp, dict):
+            db.add(Experience(
+                resume_version_id=version.id,
+                company=exp.get("company", ""),
+                title=exp.get("title", ""),
+                location=exp.get("location", ""),
+                start_date=str(exp.get("start_date", "")),
+                end_date=str(exp.get("end_date", "")),
+                description=exp.get("description", "")
+            ))
+
+    # 4. Synchronize relational projects
+    db.query(Project).filter(Project.resume_version_id == version.id).delete()
+    for proj in parsed_data_update.get("projects", []):
+        if isinstance(proj, dict):
+            db.add(Project(
+                resume_version_id=version.id,
+                title=proj.get("title", ""),
+                description=proj.get("description", ""),
+                technologies=proj.get("technologies", [])
+            ))
+
+    # 5. Sync profile metadata if provided
+    profile = current_user.profile
+    if profile:
+        if parsed_data_update.get("name"):
+            profile.full_name = parsed_data_update["name"]
+        if parsed_data_update.get("phone"):
+            profile.phone = parsed_data_update["phone"]
+        if parsed_data_update.get("location"):
+            profile.location = parsed_data_update["location"]
+        if parsed_data_update.get("github"):
+            profile.github = parsed_data_update["github"]
+        if parsed_data_update.get("linkedin"):
+            profile.linkedin = parsed_data_update["linkedin"]
+        if parsed_data_update.get("portfolio"):
+            profile.portfolio = parsed_data_update["portfolio"]
+
     db.commit()
     db.refresh(version)
     
-    # Reindex sections in FAISS since skills or experiences might have changed
-    resume_service.index_resume_version_in_faiss(current_user.id, version)
+    # 6. Reindex RAG vector memory for the current user
+    if current_user.id in rag_service.vector_store_cache:
+        del rag_service.vector_store_cache[current_user.id]
     
+    # Pre-warm vector cache with fresh resume chunks
+    try:
+        rag_service.chunk_candidate_resume(db, current_user.id)
+    except Exception as e:
+        logger.warning(f"RAG pre-warm notice: {e}")
+        
     return version

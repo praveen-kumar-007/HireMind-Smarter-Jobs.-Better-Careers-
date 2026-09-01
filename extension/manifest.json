@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "HireMind AI - Smart Job Apply Assistant",
   "version": "1.0.0",
-  "description": "1-Click AI-powered native job application assistant for Naukri, LinkedIn, and Indeed.",
+  "description": "1-Click AI-powered native job application assistant for Naukri.",
   "permissions": [
     "storage",
     "activeTab",
@@ -18,6 +18,7 @@
     "*://*.vercel.app/*",
     "*://hire-mind-praveen.vercel.app/*",
     "*://*.onrender.com/*",
+    "*://res.cloudinary.com/*",
     "*://localhost/*",
     "*://127.0.0.1/*"
   ],
@@ -28,12 +29,14 @@
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
   },
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },

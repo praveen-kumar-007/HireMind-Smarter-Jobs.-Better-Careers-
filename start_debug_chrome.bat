@@ -16,8 +16,8 @@ echo.
 echo Chrome has started successfully!
 echo.
 echo IMPORTANT INSTRUCTIONS:
-echo 1. In the Chrome window that just opened, log in to LinkedIn, Naukri, and Indeed.
-echo 2. You only need to log in ONCE. Chrome will save your logins.
+echo 1. In the Chrome window that just opened, log in to Naukri.com.
+echo 2. You only need to log in ONCE. Chrome will save your login session.
 echo 3. Keep this window open, go to http://localhost:5173/jobs and click Quick Apply!
 echo.
 pause

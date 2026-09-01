@@ -33,6 +33,15 @@ body {
   gap: 10px;
 }
 
+.brand-logo-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: contain;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .logo-icon {
   width: 32px;
   height: 32px;

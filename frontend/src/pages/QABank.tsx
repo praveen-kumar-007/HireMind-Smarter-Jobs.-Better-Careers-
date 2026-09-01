@@ -13,7 +13,14 @@ import {
   Calendar, 
   Zap, 
   ExternalLink,
-  MessageSquareText
+  MessageSquareText,
+  Sparkles,
+  Cpu,
+  Globe,
+  RefreshCw,
+  Sliders,
+  ChevronRight,
+  Database
 } from 'lucide-react'
 import Toast from '../components/Toast'
 
@@ -40,9 +47,70 @@ export default function QABank() {
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
 
+  // RAG Testing & Generation State
+  const [ragQuestion, setRagQuestion] = useState('')
+  const [ragJobTitle, setRagJobTitle] = useState('Software Engineer')
+  const [generatedRAGAnswer, setGeneratedRAGAnswer] = useState<string | null>(null)
+  const [showRAGPlayground, setShowRAGPlayground] = useState(true)
+
+  // Crawl AI State
+  const [crawlUrl, setCrawlUrl] = useState('')
+  const [crawledData, setCrawledData] = useState<any | null>(null)
+
   // Editing state
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
+
+  // RAG Generation Mutation
+  const ragMutation = useMutation({
+    mutationFn: async ({ question, jobTitle }: { question: string; jobTitle: string }) => {
+      const res = await api.post('/applications/qa/generate', {
+        question,
+        job_title: jobTitle,
+        job_description: crawledData ? crawledData.markdown_description : ''
+      })
+      return res.data
+    },
+    onSuccess: (data) => {
+      setGeneratedRAGAnswer(data.answer)
+      setToast({ type: 'success', message: 'RAG Answer generated with candidate vector context!' })
+    },
+    onError: (err: any) => {
+      setToast({ type: 'error', message: err.response?.data?.detail || 'Failed to generate answer.' })
+    }
+  })
+
+  // Resume Vectorization Mutation
+  const vectorizeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/applications/rag/vectorize')
+      return res.data
+    },
+    onSuccess: (data) => {
+      setToast({ type: 'success', message: `Resume Vectorized! Indexed ${data.chunks_indexed} semantic chunks.` })
+    },
+    onError: (err: any) => {
+      setToast({ type: 'error', message: err.response?.data?.detail || 'Failed to vectorize resume.' })
+    }
+  })
+
+  // Crawl AI Mutation
+  const crawlMutation = useMutation({
+    mutationFn: async (url: string) => {
+      const res = await api.post('/applications/crawl/extract', { url })
+      return res.data
+    },
+    onSuccess: (data) => {
+      setCrawledData(data.data)
+      if (data.data?.title) {
+        setRagJobTitle(data.data.title)
+      }
+      setToast({ type: 'success', message: `Crawled ${data.data?.title || 'job listing'} successfully!` })
+    },
+    onError: (err: any) => {
+      setToast({ type: 'error', message: err.response?.data?.detail || 'Failed to crawl job URL.' })
+    }
+  })
 
   // Fetch all Q&A items
   const { data: qaList = [], isLoading } = useQuery<QAItem[]>({
@@ -177,6 +245,237 @@ export default function QABank() {
         </div>
       </div>
 
+      {/* RAG Semantic Assistant & Crawl AI Playground */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.98) 100%)',
+        borderRadius: '16px',
+        border: '1px solid rgba(99, 102, 241, 0.35)',
+        padding: '1.5rem',
+        color: '#F8FAFC',
+        marginBottom: '2rem',
+        boxShadow: '0 15px 30px -10px rgba(0, 0, 0, 0.4)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <div style={{ background: 'linear-gradient(135deg, #6366F1 0%, #A855F7 100%)', padding: '0.4rem', borderRadius: '8px' }}>
+              <Sparkles size={20} color="#FFFFFF" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#FFFFFF' }}>
+                RAG Resume Vectorizer & Screening Reasoning Engine
+              </h2>
+              <span style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
+                Answers any screening, behavioral, or hypothetical question using your vectorized projects & experiences
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            <button
+              onClick={() => vectorizeMutation.mutate()}
+              disabled={vectorizeMutation.isPending}
+              style={{
+                background: 'rgba(99, 102, 241, 0.15)',
+                border: '1px solid rgba(99, 102, 241, 0.4)',
+                color: '#A5B4FC',
+                padding: '0.5rem 0.9rem',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+              title="Vectorize and index your resume experiences into semantic embeddings"
+            >
+              <Database size={14} style={{ animation: vectorizeMutation.isPending ? 'spin 1s linear infinite' : 'none' }} />
+              {vectorizeMutation.isPending ? 'Vectorizing...' : 'Sync & Vectorize Resume'}
+            </button>
+
+            <button
+              onClick={() => setShowRAGPlayground(!showRAGPlayground)}
+              style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#E2E8F0',
+                padding: '0.5rem 0.8rem',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                cursor: 'pointer'
+              }}
+            >
+              {showRAGPlayground ? 'Hide Playground ▲' : 'Open Playground ▼'}
+            </button>
+          </div>
+        </div>
+
+        {showRAGPlayground && (
+          <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '1.25rem' }}>
+            {/* Quick Scenario Buttons */}
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginBottom: '0.4rem', fontWeight: 600, textTransform: 'uppercase' }}>
+                Quick Test Scenarios (Hypothetical & Behavioral):
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {[
+                  { label: '🐛 Complex Bug & Solution', q: 'Tell me about a difficult technical challenge or bug you faced in your projects and how you solved it.' },
+                  { label: '⚡ Asynchronous Processing', q: 'How would you design an asynchronous task processing pipeline to handle high load without server crashes?' },
+                  { label: '📉 Latency Optimization', q: 'How do you approach optimizing high latency and database bottlenecks in a web application?' },
+                  { label: '🚀 Adopting New Tech', q: 'How do you approach learning and implementing a new framework or technology that is not in your primary stack?' }
+                ].map((s, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setRagQuestion(s.q)}
+                    style={{
+                      background: 'rgba(30, 41, 59, 0.8)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      color: '#CBD5E1',
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Crawl AI Job URL Bar (Optional) */}
+            <div style={{ marginBottom: '1rem', background: 'rgba(0, 0, 0, 0.25)', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                <Globe size={14} color="#38BDF8" />
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#38BDF8' }}>Crawl AI Job Alignment (Optional):</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  value={crawlUrl}
+                  onChange={(e) => setCrawlUrl(e.target.value)}
+                  placeholder="Paste any job listing URL (e.g. Naukri job link) to crawl requirements..."
+                  style={{
+                    flex: '1 1 280px',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    color: '#F8FAFC',
+                    fontSize: '0.85rem'
+                  }}
+                />
+                <button
+                  onClick={() => crawlMutation.mutate(crawlUrl)}
+                  disabled={crawlMutation.isPending || !crawlUrl.trim()}
+                  style={{
+                    background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                    border: 'none',
+                    color: '#FFFFFF',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {crawlMutation.isPending ? 'Crawling...' : 'Extract with Crawl AI'}
+                </button>
+              </div>
+              {crawledData && (
+                <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: '#4ADE80', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span>✓ Role: <strong>{crawledData.title}</strong></span>
+                  <span>• Company: <strong>{crawledData.company || 'Direct Employer'}</strong></span>
+                  <span>• Extracted Skills: {crawledData.skills?.slice(0, 5).join(', ')}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Question Input */}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <input
+                type="text"
+                value={ragQuestion}
+                onChange={(e) => setRagQuestion(e.target.value)}
+                placeholder="Ask any screening question (e.g., 'What is your experience with microservices?', 'How do you solve bugs?')..."
+                style={{
+                  flex: '1 1 320px',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(99, 102, 241, 0.4)',
+                  background: 'rgba(15, 23, 42, 0.9)',
+                  color: '#FFFFFF',
+                  fontSize: '0.9rem',
+                  outline: 'none'
+                }}
+              />
+              <button
+                onClick={() => ragMutation.mutate({ question: ragQuestion, jobTitle: ragJobTitle })}
+                disabled={ragMutation.isPending || !ragQuestion.trim()}
+                style={{
+                  background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  padding: '0.75rem 1.4rem',
+                  borderRadius: '10px',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  boxShadow: '0 4px 12px rgba(79, 70, 229, 0.35)'
+                }}
+              >
+                <Sparkles size={16} />
+                {ragMutation.isPending ? 'Generating...' : 'Generate RAG Answer'}
+              </button>
+            </div>
+
+            {/* Generated Output Display */}
+            {generatedRAGAnswer && (
+              <div style={{
+                background: 'rgba(30, 41, 59, 0.7)',
+                border: '1px solid rgba(99, 102, 241, 0.4)',
+                borderRadius: '10px',
+                padding: '1.25rem',
+                marginTop: '1rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ background: '#10B981', width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block' }}></span>
+                    <span style={{ fontSize: '0.8rem', color: '#34D399', fontWeight: 600 }}>
+                      Grounded in Candidate Resume Vector Store (First-Person Authenticated)
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleCopy(generatedRAGAnswer)}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: 'none',
+                      color: '#E2E8F0',
+                      padding: '0.3rem 0.6rem',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}
+                  >
+                    <Copy size={12} /> Copy
+                  </button>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.92rem', lineHeight: '1.6', color: '#F1F5F9' }}>
+                  "{generatedRAGAnswer}"
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Filter & Search Bar */}
       <div style={{
         display: 'flex',
@@ -222,9 +521,7 @@ export default function QABank() {
             }}
           >
             <option value="ALL">All Platforms</option>
-            <option value="LinkedIn">LinkedIn</option>
             <option value="Naukri">Naukri</option>
-            <option value="Indeed">Indeed</option>
             <option value="Company Website">Company Site</option>
           </select>
 
@@ -269,7 +566,7 @@ export default function QABank() {
           <p style={{ margin: '0 auto', maxWidth: '460px', fontSize: '0.9rem' }}>
             {searchTerm || sourceFilter !== 'ALL' || typeFilter !== 'ALL'
               ? 'No screening questions match your search filters.'
-              : 'As your agent applies to jobs on LinkedIn, Naukri, or Indeed, every screening question and AI answer will be automatically saved here for your inspection.'}
+              : 'As your agent applies to jobs on Naukri, every screening question and AI answer will be automatically saved here for your inspection.'}
           </p>
         </div>
       ) : (

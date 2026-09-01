@@ -68,15 +68,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
+  // Active Tab Detection
+  try {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs && tabs[0];
+      if (activeTab && activeTab.url && activeTab.url.includes('naukri.com')) {
+        const activeCard = document.getElementById('active-tab-card');
+        const activeBtn = document.getElementById('active-apply-btn');
+        if (activeCard && activeBtn) {
+          activeCard.classList.remove('hidden');
+          activeBtn.addEventListener('click', () => {
+            activeBtn.innerText = '⚡ Initiating Apply...';
+            activeBtn.disabled = true;
+            chrome.tabs.sendMessage(activeTab.id, {
+              action: 'START_APPLY_NOW',
+              appId: 'popup_active_' + Date.now()
+            }, () => {
+              window.close();
+            });
+          });
+        }
+      }
+    });
+  } catch (e) {}
+
   // Quick Apply
   quickApplyBtn.addEventListener('click', async () => {
     const url = quickUrlInput.value.trim();
     if (!url) return;
 
     quickApplyBtn.disabled = true;
-    quickApplyBtn.innerText = 'Opening...';
+    quickApplyBtn.innerText = 'Launching...';
 
-    chrome.tabs.create({ url, active: true }, () => {
+    const appId = 'quick_' + Date.now();
+    chrome.runtime.sendMessage({
+      action: 'START_APPLY',
+      appId,
+      jobUrl: url
+    }, () => {
       quickApplyBtn.disabled = false;
       quickApplyBtn.innerText = 'Apply';
       quickUrlInput.value = '';

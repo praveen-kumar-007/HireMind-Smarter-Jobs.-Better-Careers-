@@ -15,6 +15,11 @@ export default function Jobs() {
   const [matchProfile, setMatchProfile] = useState(true)
   const [showApplied, setShowApplied] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [scanProgress, setScanProgress] = useState(0)
+  const [scanStatusText, setScanStatusText] = useState('')
+  const [scanQueryTerm, setScanQueryTerm] = useState('')
+  const [foundNewCount, setFoundNewCount] = useState<number | null>(null)
+  const [showScanSummary, setShowScanSummary] = useState(false)
   const [autoApplyingAll, setAutoApplyingAll] = useState(false)
   const [activeMatchJobId, setActiveMatchJobId] = useState<number | null>(null)
   const [autoApplyingJobId, setAutoApplyingJobId] = useState<number | null>(null)
@@ -201,7 +206,7 @@ export default function Jobs() {
     );
   }).length;
 
-  // Sort: Naukri first, then LinkedIn/Indeed, then Company Website
+  // Sort: Naukri first, then other verified listings
   const sortedFilteredJobs = [...filteredJobs].sort((a: any, b: any) => {
     if (a.source === 'Naukri' && b.source !== 'Naukri') return -1;
     if (a.source !== 'Naukri' && b.source === 'Naukri') return 1;
@@ -215,29 +220,76 @@ export default function Jobs() {
     return b.id - a.id;
   });
 
-  // Scan Live Jobs Crawler
+  // Scan Live Jobs Crawler with Realistic Real-Time Progress Bar
   const scanMutation = useMutation({
     mutationFn: async (overrideSearch?: string) => {
+      const prevCount = (jobs || []).length
+      const queryTerm = overrideSearch || searchTerm || 'IT Software Roles'
+      
       setScanning(true)
-      const response = await api.get('/jobs', {
-        params: { 
-          trigger_scan: true,
-          location: location || undefined,
-          search: overrideSearch || searchTerm || undefined
-        }
-      })
-      return response.data
+      setShowScanSummary(false)
+      setFoundNewCount(null)
+      setScanProgress(14)
+      setScanQueryTerm(queryTerm)
+      setScanStatusText('Connecting to Naukri Crawler & initializing session...')
+
+      // Simulated progressive stages during crawling
+      const interval = setInterval(() => {
+        setScanProgress((prev) => {
+          if (prev < 35) {
+            setScanStatusText(`Searching Naukri listings for "${queryTerm}" in ${location || 'India'}...`)
+            return prev + 6
+          } else if (prev < 68) {
+            setScanStatusText('Scanning active IT tuples, extracting CTC, experience & skill tags...')
+            return prev + 5
+          } else if (prev < 88) {
+            setScanStatusText('Analyzing tech role alignment, filtering fresh vacancies & deduplicating...')
+            return prev + 3
+          } else if (prev < 96) {
+            setScanStatusText('Finalizing job discovery and storing records in database...')
+            return prev + 1
+          }
+          return prev
+        })
+      }, 450)
+
+      try {
+        const response = await api.get('/jobs', {
+          params: { 
+            trigger_scan: true,
+            location: location || undefined,
+            search: overrideSearch || searchTerm || undefined
+          }
+        })
+        clearInterval(interval)
+        return { data: response.data, prevCount }
+      } catch (err) {
+        clearInterval(interval)
+        throw err
+      }
     },
-    onSuccess: (data) => {
+    onSuccess: (res) => {
+      setScanProgress(100)
+      const newTotal = res.data?.length || 0
+      const newDiscovered = Math.max(0, newTotal - res.prevCount)
+      setFoundNewCount(newDiscovered)
+      setScanStatusText(
+        newDiscovered > 0
+          ? `Scan complete! Discovered ${newDiscovered} new verified IT opportunities on Naukri.`
+          : `Scan complete! Found ${newTotal} active verified IT listings on Naukri.`
+      )
       setScanning(false)
+      setShowScanSummary(true)
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
       setToast({
         type: 'success',
-        message: 'Live job scan completed! Latest listings added.'
+        message: newDiscovered > 0 ? `Discovery complete! Added ${newDiscovered} new jobs.` : 'Job scan completed! All listings refreshed.'
       })
     },
     onError: () => {
       setScanning(false)
+      setScanProgress(0)
+      setShowScanSummary(false)
       setToast({
         type: 'error',
         message: 'Live job crawler encountered an issue.'
@@ -554,6 +606,39 @@ export default function Jobs() {
     }
   })
 
+  // Clear All Applications Mutation
+  const revertAllMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/applications/revert-all')
+      return response.data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['applications'] })
+      queryClient.invalidateQueries({ queryKey: ['visited-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['pending-outreach-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['all-applied-applications'] })
+      queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      if (data.status === 'reverted') {
+        setToast({
+          type: 'success',
+          message: data.message || 'All applications cleared!'
+        })
+      } else {
+        setToast({
+          type: 'info',
+          message: data.message || 'No applications found to clear.'
+        })
+      }
+    },
+    onError: (err: any) => {
+      setToast({
+        type: 'error',
+        message: err.response?.data?.detail || 'Failed to clear applications.'
+      })
+    }
+  })
+
   const getMatchScoreBadge = (score: number) => {
     if (score >= 80) return 'badge-success'
     if (score >= 60) return 'badge-primary'
@@ -565,7 +650,7 @@ export default function Jobs() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '2.25rem', fontFamily: 'var(--font-display)', marginBottom: '0.5rem' }}>Discovered Jobs</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>Explore listings crawled from LinkedIn, Naukri, Indeed, Foundit, and more.</p>
+          <p style={{ color: 'var(--text-secondary)' }}>Explore verified IT & software listings crawled from Naukri with 1-Click AI Apply.</p>
         </div>
         
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -626,6 +711,26 @@ export default function Jobs() {
           >
             <RotateCcw size={15} style={{ animation: revertLastMutation.isPending ? 'spin 1s linear infinite' : 'none' }} />
             {revertLastMutation.isPending ? 'Undoing...' : 'Undo Last Apply'}
+          </button>
+
+          <button
+            className="btn btn-secondary"
+            onClick={() => { if (confirm('Clear ALL applied status and restore all jobs to unapplied?')) revertAllMutation.mutate() }}
+            disabled={revertAllMutation.isPending}
+            style={{
+              borderColor: '#EF4444',
+              color: '#DC2626',
+              background: '#FEF2F2',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              fontWeight: '600',
+              boxShadow: '0 1px 3px rgba(239, 68, 68, 0.1)'
+            }}
+            title="Clear ALL applied applications and restore all jobs to unapplied state"
+          >
+            <RotateCcw size={15} style={{ animation: revertAllMutation.isPending ? 'spin 1s linear infinite' : 'none' }} />
+            {revertAllMutation.isPending ? 'Clearing...' : 'Clear All Applied'}
           </button>
 
           <button 
@@ -759,9 +864,8 @@ export default function Jobs() {
               onChange={(e) => setSource(e.target.value)}
               style={{ background: 'var(--bg-tertiary)' }}
             >
-              <option value="">All Sources (Naukri, LinkedIn, Company Sites)</option>
+              <option value="">All Sources (Naukri)</option>
               <option value="Naukri">Naukri</option>
-              <option value="LinkedIn">LinkedIn</option>
               <option value="Company Website">Company Website (Direct Careers)</option>
             </select>
           </div>
@@ -809,25 +913,229 @@ export default function Jobs() {
         </div>
       </div>
 
-      {/* Live Parallel Crawl Streaming Banner */}
-      {scanning && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.6rem',
-          background: '#EFF6FF',
-          border: '1px solid #BFDBFE',
-          boxShadow: '0 4px 14px rgba(0, 120, 212, 0.1)',
-          padding: '0.75rem 1.25rem',
-          borderRadius: '12px',
-          marginBottom: '1.25rem',
-          color: '#1E40AF',
-          fontSize: '0.88rem'
-        }}>
-          <Sparkles size={16} style={{ color: '#0078D4', animation: 'spin 2s linear infinite' }} />
-          <span>
-            <strong>Ultra-Fast Parallel Crawl Active:</strong> Streaming new jobs from LinkedIn, Naukri & Company Websites instantly as they are discovered...
-          </span>
+      {/* Professional Interactive Crawl Progress Bar */}
+      {(scanning || showScanSummary) && (
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.97) 100%)',
+            backdropFilter: 'blur(16px)',
+            border: scanning ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid rgba(34, 197, 94, 0.4)',
+            borderRadius: '16px',
+            padding: '1.25rem 1.5rem',
+            marginBottom: '1.75rem',
+            boxShadow: scanning 
+              ? '0 12px 32px -4px rgba(15, 23, 42, 0.5), 0 0 20px rgba(99, 102, 241, 0.15)'
+              : '0 12px 32px -4px rgba(15, 23, 42, 0.5), 0 0 20px rgba(34, 197, 94, 0.15)',
+            position: 'relative',
+            overflow: 'hidden',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          {/* Ambient Glow in background */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '-40%',
+              right: '-10%',
+              width: '320px',
+              height: '320px',
+              background: scanning 
+                ? 'radial-gradient(circle, rgba(99, 102, 241, 0.22) 0%, rgba(168, 85, 247, 0.08) 60%, transparent 100%)'
+                : 'radial-gradient(circle, rgba(34, 197, 94, 0.22) 0%, rgba(16, 185, 129, 0.08) 60%, transparent 100%)',
+              pointerEvents: 'none',
+              filter: 'blur(40px)',
+            }}
+          />
+
+          {/* Top Header Row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '10px',
+                  background: scanning ? 'rgba(99, 102, 241, 0.25)' : 'rgba(34, 197, 94, 0.25)',
+                  border: scanning ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid rgba(34, 197, 94, 0.5)',
+                  flexShrink: 0
+                }}
+              >
+                {scanning ? (
+                  <Sparkles size={17} style={{ color: '#818cf8', animation: 'spin 2.5s linear infinite' }} />
+                ) : (
+                  <CheckCircle2 size={18} style={{ color: '#4ade80' }} />
+                )}
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc', letterSpacing: '-0.01em' }}>
+                    {scanning ? 'Live Naukri AI Job Discovery' : 'Job Discovery Complete'}
+                  </span>
+                  {scanning && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '2px 8px',
+                        borderRadius: '9999px',
+                        background: 'rgba(59, 130, 246, 0.2)',
+                        border: '1px solid rgba(59, 130, 246, 0.35)',
+                        color: '#93c5fd',
+                        fontSize: '0.72rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3b82f6', boxShadow: '0 0 6px #3b82f6', animation: 'pulse-dot 1.5s infinite' }}></span>
+                      Active Crawl
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#cbd5e1', marginTop: '2px', fontWeight: 500 }}>
+                  {scanStatusText || 'Searching for developer and software roles...'}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {/* Live Found Count Badge */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: '10px',
+                  color: '#f1f5f9',
+                  fontSize: '0.82rem',
+                  fontWeight: 700
+                }}
+              >
+                <Briefcase size={14} style={{ color: '#818cf8' }} />
+                <span>
+                  {jobs?.length || 0} Total Available
+                  {foundNewCount !== null && foundNewCount > 0 && (
+                    <span style={{ color: '#4ade80', marginLeft: '5px' }}>(+{foundNewCount} new)</span>
+                  )}
+                </span>
+              </div>
+
+              {/* Progress Percentage Badge */}
+              <span
+                style={{
+                  fontSize: '1.1rem',
+                  fontWeight: 800,
+                  color: scanning ? '#818cf8' : '#4ade80',
+                  minWidth: '45px',
+                  textAlign: 'right',
+                  fontVariantNumeric: 'tabular-nums'
+                }}
+              >
+                {Math.round(scanProgress)}%
+              </span>
+
+              {showScanSummary && !scanning && (
+                <button
+                  onClick={() => setShowScanSummary(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: '18px',
+                    padding: '0 4px',
+                    lineHeight: 1,
+                    transition: 'color 0.2s'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#f8fafc'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; }}
+                  title="Dismiss progress notification"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* The Animated Progress Bar */}
+          <div
+            style={{
+              width: '100%',
+              height: '9px',
+              background: 'rgba(15, 23, 42, 0.85)',
+              borderRadius: '9999px',
+              overflow: 'hidden',
+              position: 'relative',
+              boxShadow: 'inset 0 2px 4px rgba(0, 0, 0, 0.4)',
+              border: '1px solid rgba(255, 255, 255, 0.08)'
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.min(Math.max(scanProgress, 2), 100)}%`,
+                height: '100%',
+                background: scanning
+                  ? 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%)'
+                  : 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                borderRadius: '9999px',
+                transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1), background 0.4s ease',
+                boxShadow: scanning ? '0 0 14px rgba(99, 102, 241, 0.7)' : '0 0 14px rgba(16, 185, 129, 0.7)',
+                position: 'relative'
+              }}
+            >
+              {/* Shimmer effect inside bar */}
+              {scanning && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundImage: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%)',
+                    animation: 'shimmer 1.4s infinite linear',
+                    backgroundSize: '200% 100%'
+                  }}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Footer Info */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '0.75rem',
+              fontSize: '0.76rem',
+              color: '#94a3b8',
+              flexWrap: 'wrap',
+              gap: '0.5rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ color: '#cbd5e1' }}>
+                Query: <strong style={{ color: '#93c5fd' }}>{scanQueryTerm || 'IT Software Developer'}</strong>
+              </span>
+              <span>•</span>
+              <span>Location: <strong style={{ color: '#e2e8f0' }}>{location || 'India'}</strong></span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span>Platform: <strong style={{ color: '#f59e0b' }}>Naukri.com SRP</strong></span>
+              <span>•</span>
+              <span style={{ color: scanning ? '#38bdf8' : '#4ade80', fontWeight: 600 }}>
+                {scanning ? 'Live Parsing & Extraction' : 'Verified & Synced to Database'}
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -836,8 +1144,64 @@ export default function Jobs() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {sortedFilteredJobs?.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '3rem', color: '#64748B' }}>
-            No jobs found matching your filters. Try clicking "Scan Jobs via AI" to crawl job boards.
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '3.5rem 2rem',
+              background: '#FFFFFF',
+              border: '1px dashed #CBD5E1',
+              borderRadius: '16px',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.03)'
+            }}
+          >
+            <div style={{ width: '52px', height: '52px', borderRadius: '12px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', color: '#64748B' }}>
+              <Briefcase size={26} style={{ color: '#0078D4' }} />
+            </div>
+            
+            {appliedOrMailSentCount > 0 && !showApplied ? (
+              <div>
+                <h4 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', marginBottom: '0.4rem' }}>
+                  {appliedOrMailSentCount} Jobs in your Applied / Mail Sent list
+                </h4>
+                <p style={{ color: '#64748B', fontSize: '0.88rem', maxWidth: '480px', margin: '0 auto 1.25rem' }}>
+                  All current listings in this pool have already been applied to or reached out to. You can reveal them or scan for brand new unapplied opportunities.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => setShowApplied(true)}
+                    className="btn btn-outline"
+                    style={{ fontSize: '0.88rem', padding: '0.55rem 1.25rem', fontWeight: 600 }}
+                  >
+                    Reveal {appliedOrMailSentCount} Applied Jobs
+                  </button>
+                  <button
+                    onClick={() => scanMutation.mutate()}
+                    disabled={scanning}
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.88rem', padding: '0.55rem 1.25rem', fontWeight: 600 }}
+                  >
+                    <Sparkles size={15} /> Scan Fresh Naukri Jobs
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <h4 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', marginBottom: '0.4rem' }}>
+                  No jobs found matching your filters
+                </h4>
+                <p style={{ color: '#64748B', fontSize: '0.88rem', maxWidth: '440px', margin: '0 auto 1.25rem' }}>
+                  Try adjusting your search keywords, location filters, or click below to discover fresh IT & Software vacancies.
+                </p>
+                <button
+                  onClick={() => scanMutation.mutate()}
+                  disabled={scanning}
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.88rem', padding: '0.55rem 1.25rem', fontWeight: 600 }}
+                >
+                  <Sparkles size={15} /> Scan Naukri Jobs via AI
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           sortedFilteredJobs?.map((job: any, index: number) => {

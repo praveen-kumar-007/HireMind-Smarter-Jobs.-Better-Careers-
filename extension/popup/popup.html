@@ -11,10 +11,10 @@
     <!-- Header -->
     <header class="header">
       <div class="brand">
-        <div class="logo-icon">✨</div>
+        <img src="https://res.cloudinary.com/dmmll82la/image/upload/v1788258815/hiremind-icon_s4munw.png" onerror="this.src='../icons/icon48.png'" alt="HireMind Logo" class="brand-logo-img">
         <div>
           <h1>HireMind AI</h1>
-          <span class="badge">Extension v1.0</span>
+          <span class="badge">Naukri Apply v1.0</span>
         </div>
       </div>
       <div id="connection-badge" class="status-indicator status-offline">
@@ -35,12 +35,21 @@
       </div>
     </section>
 
+    <!-- Active Tab Naukri Card (Conditional) -->
+    <section id="active-tab-card" class="card active-tab-card hidden" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.15)); border: 1px solid rgba(59, 130, 246, 0.35);">
+      <div class="card-title" style="color: #93c5fd; display: flex; align-items: center; gap: 6px;">
+        <span>⚡</span> Active Naukri Job Detected
+      </div>
+      <p class="subtitle" style="margin-bottom: 8px;">You have an active Naukri job open in your current tab:</p>
+      <button id="active-apply-btn" class="btn btn-primary" style="width: 100%; font-weight: 700;">🚀 Auto-Apply to this Job Now</button>
+    </section>
+
     <!-- Quick Apply Tool -->
     <section class="card">
       <div class="card-title">1-Click Job Apply</div>
-      <p class="subtitle">Navigate to any Naukri/LinkedIn job page or paste the link below:</p>
+      <p class="subtitle">Navigate to any Naukri job page or paste the link below:</p>
       <div class="input-group">
-        <input type="text" id="quick-url-input" placeholder="Paste job URL (Naukri / LinkedIn)...">
+        <input type="text" id="quick-url-input" placeholder="Paste Naukri job URL (e.g. https://www.naukri.com/job-listings-...)">
         <button id="quick-apply-btn" class="btn btn-primary">Apply</button>
       </div>
     </section>

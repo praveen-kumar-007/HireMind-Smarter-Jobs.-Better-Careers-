@@ -13,6 +13,7 @@ import Visited from './pages/Visited'
 import AllApplied from './pages/AllApplied'
 import ManualIntervention from './pages/ManualIntervention'
 import QABank from './pages/QABank'
+import AdminApprovals from './pages/AdminApprovals'
 import { Menu, X } from 'lucide-react'
 import api from './services/api'
 
@@ -115,6 +116,7 @@ export default function App() {
         <Route path="/resume" element={<Resume />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/admin/users" element={<AdminApprovals />} />
       </Route>
 
       {/* Fallback redirect */}

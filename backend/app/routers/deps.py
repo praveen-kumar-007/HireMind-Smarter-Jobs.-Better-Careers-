@@ -28,7 +28,11 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials payload",
         )
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    if str(user_id).isdigit():
+        user = db.query(User).filter(User.id == int(user_id)).first()
+    else:
+        user = db.query(User).filter(User.email == str(user_id)).first()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -55,7 +59,10 @@ def get_current_user_optional(
         user_id = payload.get("sub")
         if not user_id:
             return None
-        return db.query(User).filter(User.id == int(user_id)).first()
+        if str(user_id).isdigit():
+            return db.query(User).filter(User.id == int(user_id)).first()
+        else:
+            return db.query(User).filter(User.email == str(user_id)).first()
     except Exception:
         return None
 

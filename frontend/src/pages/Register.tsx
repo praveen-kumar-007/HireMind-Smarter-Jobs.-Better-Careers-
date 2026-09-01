@@ -77,14 +77,16 @@ export default function Register() {
         {success && (
           <div style={{ 
             background: 'rgba(16, 185, 129, 0.1)', 
-            border: '1px solid var(--success)', 
-            color: '#34d399',
-            padding: '0.75rem',
+            border: '1px solid #10B981', 
+            color: '#10B981', 
+            padding: '1rem',
             borderRadius: 'var(--radius-sm)',
             fontSize: '0.85rem',
-            marginBottom: '1rem'
+            marginBottom: '1rem',
+            lineHeight: '1.4'
           }}>
-            Account created successfully! Redirecting to login...
+            <strong>Registration Submitted!</strong><br />
+            Your account is currently awaiting administrator approval by Praveen (praveen.pr105@gmail.com). You will be able to log in once approved.
           </div>
         )}
 
