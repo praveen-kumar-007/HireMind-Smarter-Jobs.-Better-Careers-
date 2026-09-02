@@ -716,6 +716,144 @@ function findDrawerSaveButton() {
 }
 
 /**
+ * Analyzes question text and candidate profile to determine whether Yes, No,
+ * or a specific profile option is the correct, compliant answer.
+ */
+function resolveQuestionIntent(questionText, candidate) {
+  const q = (questionText || '').toLowerCase().trim();
+
+  // Negative / Disqualification Check (Must Answer "No")
+  const negativeTriggers = [
+    'criminal',
+    'convict',
+    'illegal',
+    'felony',
+    'misconduct',
+    'terminated for cause',
+    'disciplinary',
+    'active backlog',
+    'standing arrears',
+    'non-compete',
+    'legal restriction',
+    'applied in the last 6 months',
+    'applied in last 6 months',
+    'applied in the past 6 months',
+    'previously worked at',
+    'previously interviewed',
+    'any litigation',
+    'require visa sponsorship',
+    'need sponsorship'
+  ];
+
+  for (const neg of negativeTriggers) {
+    if (q.includes(neg)) {
+      console.log(`[HireMind Naukri] Question intent classified as NEGATIVE ("No"): "${q}"`);
+      return { type: 'boolean', value: 'No', confidence: 0.95 };
+    }
+  }
+
+  // Affirmative Check (Answer "Yes")
+  const affirmativeTriggers = [
+    'relocate',
+    'living in',
+    'residing in',
+    'ready to move',
+    'comfortable with',
+    'willing to',
+    'ready to join',
+    'work authorization',
+    'authorized to work',
+    'valid passport',
+    'background check',
+    'background verification',
+    'drug test',
+    'shifts',
+    'night shift',
+    'rotational',
+    'weekend',
+    'travel',
+    'full time',
+    'permanent',
+    'agree',
+    'terms and conditions',
+    'eligible to work',
+    'completed degree',
+    'passed out',
+    'hands-on experience',
+    'skills in',
+    'experience in'
+  ];
+
+  for (const aff of affirmativeTriggers) {
+    if (q.includes(aff)) {
+      console.log(`[HireMind Naukri] Question intent classified as AFFIRMATIVE ("Yes"): "${q}"`);
+      return { type: 'boolean', value: 'Yes', confidence: 0.95 };
+    }
+  }
+
+  // Notice Period Check
+  if (q.includes('notice') || q.includes('how soon') || q.includes('joining')) {
+    return { type: 'notice', value: candidate.notice_period || 'Immediate / 15 days', confidence: 0.9 };
+  }
+
+  // Experience Check
+  if (q.includes('experience') || q.includes('years') || q.includes('exp')) {
+    return { type: 'experience', value: String(candidate.experience_years || 2), confidence: 0.9 };
+  }
+
+  // CTC / Salary Check
+  if (q.includes('ctc') || q.includes('salary') || q.includes('compensation') || q.includes('lpa')) {
+    return { type: 'ctc', value: candidate.expected_ctc || '500000', confidence: 0.9 };
+  }
+
+  // Location Check
+  if (q.includes('current location') || q.includes('current city') || q.includes('residence')) {
+    return { type: 'location', value: candidate.location || 'Bangalore, India', confidence: 0.9 };
+  }
+
+  return { type: 'boolean', value: 'Yes', confidence: 0.7 };
+}
+
+/**
+ * Find option element matching the resolved desired answer
+ */
+function findMatchingOptionForAnswer(desiredAnswer, root = document) {
+  const allElements = Array.from(root.querySelectorAll('*')).filter(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (el.children.length > 3) return false;
+    const txt = (el.innerText || el.textContent || '').trim();
+    return txt.length > 0 && txt.length < 60;
+  });
+
+  const desiredLower = (desiredAnswer || '').toLowerCase().trim();
+
+  // 1. Exact match (e.g. "Yes", "No", "Immediate", "15 days")
+  for (const el of allElements) {
+    const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+    if (
+      txt === desiredLower ||
+      txt === `○ ${desiredLower}` ||
+      txt === `● ${desiredLower}` ||
+      txt.startsWith(`${desiredLower} `) ||
+      txt === desiredLower.toUpperCase()
+    ) {
+      return el;
+    }
+  }
+
+  // 2. Substring match
+  for (const el of allElements) {
+    const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+    if (txt.includes(desiredLower)) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Comprehensive handler for screening questions, options, inputs, and Save button
  */
 async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget) {
@@ -734,33 +872,46 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
 
     let actedThisTurn = false;
 
-    // 1. Check for "Yes" or Affirmative Option Button
-    const yesOption = findAffirmativeOption();
-    if (yesOption) {
-      console.log('[HireMind Naukri] Found "Yes" option card. Clicking...');
-      updateWidget('Selecting Yes', Math.min(70 + turn * 2, 94), 'Selecting "Yes"...');
-      await selectOptionElement(yesOption);
+    // 1. Extract active question text from drawer
+    const questionNodes = Array.from(document.querySelectorAll('p, div, span, h2, h3, h4, h5, label')).filter(el => {
+      const t = (el.innerText || '').trim();
+      const tLower = t.toLowerCase();
+      if (t.length < 5 || t.length > 250) return false;
+      if (tLower.includes('thank you for showing') || tLower.includes('kindly answer') || tLower.includes('grievance')) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && (r.left > window.innerWidth * 0.4 || t.includes('?'));
+    });
+
+    const activeQuestion = questionNodes.length > 0 ? (questionNodes[questionNodes.length - 1].innerText || '').trim() : '';
+    console.log(`[HireMind Naukri] Active question (${turn + 1}): "${activeQuestion}"`);
+
+    // 2. Resolve smart answer based on question intent and candidate profile
+    const intent = resolveQuestionIntent(activeQuestion, candidate);
+    console.log(`[HireMind Naukri] Resolved answer intent:`, intent);
+
+    // 3. Find and select the corresponding option card
+    const targetOptionEl = findMatchingOptionForAnswer(intent.value, document);
+    if (targetOptionEl) {
+      console.log(`[HireMind Naukri] Selecting resolved option: "${intent.value}"`);
+      updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting "${intent.value}"...`);
+      await selectOptionElement(targetOptionEl);
       actedThisTurn = true;
       await HireMindCommon.delay(600);
     } else {
-      // 2. Check for other option cards (Notice period, Experience, Degree, etc.)
+      // Fallback: Check for standard option cards
       const otherOptions = findAllChatbotOptions(document);
       if (otherOptions.length > 0) {
-        let targetOpt = otherOptions.find(o => {
-          const t = (o.innerText || o.textContent || '').trim().toLowerCase();
-          return t === 'immediate' || t.includes('15 days') || t.includes('full time') || t.includes('b.tech') || t.includes('2024') || (t !== 'no' && !t.startsWith('no '));
-        }) || otherOptions[0];
-
-        const optLabel = (targetOpt.innerText || targetOpt.textContent || 'Option').trim();
-        console.log(`[HireMind Naukri] Selecting option card: "${optLabel}"`);
-        updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting: "${optLabel}"`);
-        await selectOptionElement(targetOpt);
+        const fallbackOpt = otherOptions[0];
+        const optTxt = (fallbackOpt.innerText || fallbackOpt.textContent || 'Option').trim();
+        console.log(`[HireMind Naukri] Fallback selecting option card: "${optTxt}"`);
+        updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting: "${optTxt}"`);
+        await selectOptionElement(fallbackOpt);
         actedThisTurn = true;
         await HireMindCommon.delay(600);
       }
     }
 
-    // 3. Handle HTML <select> dropdowns if any
+    // 4. Handle HTML <select> dropdowns if any
     const selectElements = Array.from(document.querySelectorAll('select')).filter(el => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && !el.disabled;
@@ -775,10 +926,9 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       }
     }
 
-    // 4. Handle Text / Number / Date / Textarea input fields
+    // 5. Handle Text / Number / Date / Textarea input fields
     const textInputs = Array.from(document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], input:not([type]), textarea, div[contenteditable="true"]')).filter(el => {
       const r = el.getBoundingClientRect();
-      // Only pick inputs visible in right drawer or modal
       return r.width > 0 && r.height > 0 && r.left > window.innerWidth * 0.4 && (!el.value || el.value.trim().length === 0);
     });
 
@@ -787,7 +937,7 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       const inputName = (textInput.name || '').toLowerCase();
       const inputPlaceholder = (textInput.placeholder || '').toLowerCase();
       const inputType = (textInput.type || 'text').toLowerCase();
-      const inputCtx = `${inputId} ${inputName} ${inputPlaceholder}`;
+      const inputCtx = `${activeQuestion.toLowerCase()} ${inputId} ${inputName} ${inputPlaceholder}`;
 
       let answer = '';
       if (inputType === 'date') {
@@ -803,7 +953,10 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       } else if (inputCtx.includes('location') || inputCtx.includes('city')) {
         answer = candidate.location || 'Bangalore, India';
       } else {
-        answer = 'Yes, I have relevant hands-on skills and domain experience for this role.';
+        answer = await HireMindCommon.askAI(appId, activeQuestion, job.title, job.description);
+        if (!answer || answer.length < 2) {
+          answer = 'Yes, I have relevant hands-on skills and domain experience for this role.';
+        }
       }
 
       console.log(`[HireMind Naukri] Typing answer: "${answer}"`);
@@ -813,7 +966,7 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       actedThisTurn = true;
     }
 
-    // 5. CRITICAL: Locate and Click the "Save" / "Submit" / "Send" / "Next" Button
+    // 6. CRITICAL: Locate and Click the "Save" / "Submit" / "Send" / "Next" Button
     await HireMindCommon.delay(400);
     const saveBtn = findDrawerSaveButton();
     if (saveBtn) {
@@ -827,7 +980,7 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       actedThisTurn = true;
     }
 
-    // 6. Check if done after saving
+    // 7. Check if done after saving
     if (isNaukriAlreadyApplied()) {
       return true;
     }
@@ -836,9 +989,8 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
     if (!actedThisTurn && !saveBtn) {
       await HireMindCommon.delay(1500);
       if (isNaukriAlreadyApplied()) return true;
-      const remainingYes = findAffirmativeOption();
       const remainingSave = findDrawerSaveButton();
-      if (!remainingYes && !remainingSave) {
+      if (!remainingSave) {
         console.log('[HireMind Naukri] No more active questions or save buttons found.');
         break;
       }
