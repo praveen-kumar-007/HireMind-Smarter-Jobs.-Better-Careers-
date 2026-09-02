@@ -672,22 +672,32 @@ async function selectOptionElement(targetEl) {
 }
 
 /**
- * Reliably finds and clicks the Save / Next / Submit button in the questionnaire drawer
+ * Reliably finds and clicks ONLY the blue Save/Submit button inside the right-hand questionnaire drawer
  */
 async function clickDrawerSaveButton() {
   await HireMindCommon.delay(350);
 
-  // 1. Search for any visible button/link/div with Save / Next / Submit text
-  const candidateElements = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a, input[type="submit"], input[type="button"], [class*="btn"], [class*="save"], [class*="submit"], [class*="action"], [class*="next"], [class*="primary"]')).filter(el => {
+  // 1. Locate the questionnaire drawer container on the right side of the screen
+  const rightBoundary = window.innerWidth * 0.55;
+
+  const candidateElements = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], input[type="submit"], input[type="button"], a[class*="btn"], [class*="save"], [class*="submit"], [class*="primary"]')).filter(el => {
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
+    
+    // STRICT FILTER: Must be on the right side of the screen (inside questionnaire drawer)
+    if (r.left < rightBoundary) return false;
+
+    // STRICT FILTER: Must be in the lower half of the screen (drawer footer)
+    if (r.top < window.innerHeight * 0.4) return false;
+
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
 
-    // Ignore background Apply button on the left
-    if (r.left < window.innerWidth * 0.35 && r.top < window.innerHeight * 0.6) return false;
-
     const txt = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
+    
+    // Ignore any bookmark / save-job buttons
+    if (txt.includes('save job') || txt.includes('bookmark') || txt.includes('save this')) return false;
+
     return (
       txt === 'save' ||
       txt === 'submit' ||
@@ -695,11 +705,10 @@ async function clickDrawerSaveButton() {
       txt === 'next' ||
       txt === 'continue' ||
       txt === 'proceed' ||
-      txt === 'submit application' ||
-      txt === 'save & apply' ||
-      txt === 'save and apply' ||
-      txt === 'save & continue' ||
       txt === 'save & next' ||
+      txt === 'save & continue' ||
+      txt === 'submit application' ||
+      txt === 'save and next' ||
       txt.startsWith('save') ||
       txt.startsWith('submit') ||
       txt.startsWith('next')
@@ -708,30 +717,30 @@ async function clickDrawerSaveButton() {
 
   let targetBtn = null;
   if (candidateElements.length > 0) {
-    // Pick the lowest / bottom-most action button in viewport (inside active drawer)
+    // Pick the lowest / bottom-most button in the right drawer (footer action button)
     candidateElements.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
     targetBtn = candidateElements[0];
   } else {
-    // Fallback: Check right-hand bottom drawer for ANY clickable button
-    const rightBottomBtns = Array.from(document.querySelectorAll('button, div[role="button"], a.btn')).filter(el => {
+    // Secondary fallback: Look for any primary blue action button in the right drawer bottom area
+    const rightFooterBtns = Array.from(document.querySelectorAll('button, div[role="button"], a')).filter(el => {
       const r = el.getBoundingClientRect();
-      return r.left > window.innerWidth * 0.45 && r.top > window.innerHeight * 0.5 && r.width > 40 && r.height > 20;
+      return r.left > rightBoundary && r.top > window.innerHeight * 0.65 && r.width > 60 && r.height > 25;
     });
-    if (rightBottomBtns.length > 0) {
-      rightBottomBtns.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
-      targetBtn = rightBottomBtns[0];
+    if (rightFooterBtns.length > 0) {
+      rightFooterBtns.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+      targetBtn = rightFooterBtns[0];
     }
   }
 
   if (targetBtn) {
     const label = (targetBtn.innerText || targetBtn.value || 'Save').trim();
-    console.log(`[HireMind Naukri] Clicking Save/Submit button: "${label}"`, targetBtn);
+    console.log(`[HireMind Naukri] Clicking Questionnaire Drawer Save Button: "${label}"`, targetBtn);
     targetBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await HireMindCommon.delay(100);
 
-    // If button has disabled attribute, wait and clear it
+    // If disabled, wait and enable
     if (targetBtn.disabled) {
-      await HireMindCommon.delay(400);
+      await HireMindCommon.delay(300);
       targetBtn.removeAttribute('disabled');
       targetBtn.disabled = false;
     }
@@ -742,7 +751,6 @@ async function clickDrawerSaveButton() {
     }
     targetBtn.click();
 
-    // If inside or containing a button element, click that too
     const innerBtn = targetBtn.querySelector('button, span, div') || targetBtn.closest('button');
     if (innerBtn && innerBtn !== targetBtn) {
       innerBtn.click();
