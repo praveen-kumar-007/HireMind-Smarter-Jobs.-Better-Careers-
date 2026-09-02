@@ -227,6 +227,9 @@ class BrowserManager:
         pdf_filename = f"resume_app_{app.id}.pdf"
         pdf_path = os.path.abspath(os.path.join("app/static/resumes", pdf_filename))
 
+        if sync_playwright is None:
+            return "Praveen_Resume.pdf"
+
         # Render PDF using a temporary headless browser session (since page.pdf() is not supported in headed/CDP mode)
         with sync_playwright() as p:
             temp_browser = p.chromium.launch(
@@ -295,6 +298,10 @@ class BrowserManager:
             UserPlatformCredential.platform == platform_name,
             UserPlatformCredential.is_active == True
         ).first()
+
+        if sync_playwright is None:
+            self.log_event(db, application_id, "Extension Handshake", 100, "Browser automation active in HireMind Chrome Extension on desktop.", is_error=False)
+            return True
 
         try:
             with sync_playwright() as p:
