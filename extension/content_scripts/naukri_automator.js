@@ -40,7 +40,7 @@
       phone: '',
       experience_years: 2,
       notice_period: 'Immediate (within 15 days)',
-      expected_ctc: 'Negotiable',
+      expected_ctc: '500000',
       location: 'Bangalore, India',
       education: 'B.Tech / B.E.',
       skills: 'Python, JavaScript, React, SQL, Cloud'
@@ -58,7 +58,7 @@
       console.warn('[HireMind Naukri] Context fetch fallback used:', e);
     }
 
-    // Render floating status widget
+    // Render floating status widget on BOTTOM LEFT so it never covers the chatbot drawer or Save button
     const existingWidget = document.getElementById('hiremind-extension-widget');
     if (existingWidget) existingWidget.remove();
 
@@ -659,7 +659,7 @@ function findAllChatbotOptions(root = document) {
 }
 
 /**
- * Click option with full mouse/touch sequence and trigger inner inputs
+ * Click option with full mouse/touch sequence, checking radio inputs and triggering React state
  */
 async function clickOptionCard(el) {
   if (!el) return;
@@ -667,26 +667,28 @@ async function clickOptionCard(el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await HireMindCommon.delay(100);
 
-    const mouseOverEvent = new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window });
-    const mouseDownEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window });
-    const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window });
-    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-
-    el.dispatchEvent(mouseOverEvent);
-    await HireMindCommon.delay(40);
-    el.dispatchEvent(mouseDownEvent);
-    await HireMindCommon.delay(40);
-    el.dispatchEvent(mouseUpEvent);
-    await HireMindCommon.delay(40);
-    el.dispatchEvent(clickEvent);
+    // Trigger synthetic pointer and mouse events
+    const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+    for (const evtName of events) {
+      el.dispatchEvent(new MouseEvent(evtName, { bubbles: true, cancelable: true, view: window }));
+    }
     el.click();
 
-    // Trigger any inner input, label, or radio
-    const inner = el.querySelector('input, label, span, button');
-    if (inner && inner !== el) {
-      inner.click();
+    // If there is an underlying radio or checkbox input, check it directly
+    const innerInput = el.querySelector('input[type="radio"], input[type="checkbox"]') || el.closest('label')?.querySelector('input') || el.parentElement?.querySelector('input');
+    if (innerInput) {
+      innerInput.checked = true;
+      innerInput.dispatchEvent(new Event('change', { bubbles: true }));
+      innerInput.dispatchEvent(new Event('input', { bubbles: true }));
+      innerInput.click();
     }
-    await HireMindCommon.delay(300);
+
+    // Trigger any inner label or span
+    const innerLabel = el.querySelector('label, span');
+    if (innerLabel && innerLabel !== el) {
+      innerLabel.click();
+    }
+    await HireMindCommon.delay(350);
   } catch (err) {
     console.warn('[HireMind Naukri] Option click fallback:', err);
     try { el.click(); } catch (e) {}
@@ -694,8 +696,59 @@ async function clickOptionCard(el) {
 }
 
 /**
+ * Find and click the active Save / Submit / Send / Next button inside the drawer or modal
+ */
+async function clickActiveSaveButton(container) {
+  await HireMindCommon.delay(300);
+
+  // Search inside container first, then fallback to document
+  const roots = [container, document];
+  for (const root of roots) {
+    if (!root) continue;
+    const actionBtns = Array.from(root.querySelectorAll('button, input[type="submit"], div[role="button"], span[role="button"], a[class*="btn"], [class*="save"], [class*="submit"], [class*="send"]')).filter(b => {
+      const r = b.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const style = window.getComputedStyle(b);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+
+      const txt = (b.innerText || b.textContent || b.value || '').trim().toLowerCase();
+      return (
+        txt === 'save' ||
+        txt === 'submit' ||
+        txt === 'send' ||
+        txt === 'next' ||
+        txt === 'continue' ||
+        txt === 'apply' ||
+        txt === 'proceed' ||
+        txt === 'submit application' ||
+        txt === 'save & apply' ||
+        txt === 'save and apply' ||
+        txt === 'save & continue' ||
+        txt === 'save & next' ||
+        txt.includes('save') ||
+        txt.includes('submit') ||
+        txt.includes('send')
+      );
+    });
+
+    if (actionBtns.length > 0) {
+      // Pick the last/deepest save button (usually inside the active drawer)
+      const saveBtn = actionBtns[actionBtns.length - 1];
+      const btnTxt = (saveBtn.innerText || saveBtn.value || 'Save').trim();
+      console.log(`[HireMind Naukri] Clicking action button: "${btnTxt}"`);
+      saveBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await HireMindCommon.delay(100);
+      await HireMindCommon.humanClick(saveBtn);
+      await HireMindCommon.delay(1800);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Comprehensive handler for ALL types of screening chatbot questions,
- * radio options, chips, text/number inputs, dropdowns, and Save/Submit actions.
+ * radio options, chips, text/number inputs, dropdowns, dates, and Save/Submit actions.
  */
 async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget) {
   console.log('[HireMind Naukri] Scanning for screening chatbot / questions...');
@@ -734,8 +787,8 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
   updateWidget('Screening Bot', 65, 'Naukri screening bot detected. Answering questions with AI...');
   await HireMindCommon.logStep(appId, 'Screening Bot Detected', 65, 'Screening questionnaire detected. Generating AI answers...');
 
-  // Loop through up to 25 turns of dynamic chatbot questions
-  for (let turn = 0; turn < 25; turn++) {
+  // Loop through up to 30 turns of dynamic chatbot questions
+  for (let turn = 0; turn < 30; turn++) {
     if (isNaukriAlreadyApplied()) {
       console.log('[HireMind Naukri] Already applied during screening questionnaire.');
       return true;
@@ -769,7 +822,9 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
         tLower.includes('education') ||
         tLower.includes('degree') ||
         tLower.includes('authorized') ||
-        tLower.includes('joining')
+        tLower.includes('joining') ||
+        tLower.includes('gender') ||
+        tLower.includes('work mode')
       );
     });
 
@@ -913,7 +968,7 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       console.log(`[HireMind Naukri] Clicking option: "${selectedLabel}"`);
       updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting: "${selectedLabel}"`);
       await clickOptionCard(targetOption);
-      await HireMindCommon.delay(1200);
+      await HireMindCommon.delay(800);
       handledInThisTurn = true;
     }
 
@@ -930,8 +985,8 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       await HireMindCommon.delay(200);
     }
 
-    // 5. Locate and Fill Text / Number / Textarea Input Fields
-    const textInputs = Array.from(container.querySelectorAll('input[type="text"], input[type="number"], input:not([type]), textarea, div[contenteditable="true"]')).filter(el => {
+    // 5. Locate and Fill Text / Number / Date / Textarea Input Fields
+    const textInputs = Array.from(container.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], input:not([type]), textarea, div[contenteditable="true"]')).filter(el => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && el.offsetParent !== null;
     });
@@ -942,13 +997,17 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       const inputId = (textInput.id || '').toLowerCase();
       const inputName = (textInput.name || '').toLowerCase();
       const inputPlaceholder = (textInput.placeholder || '').toLowerCase();
+      const inputType = (textInput.type || 'text').toLowerCase();
       const inputContext = `${qLower} ${inputId} ${inputName} ${inputPlaceholder}`;
 
       let answer = '';
-      if (inputContext.includes('experience') || inputContext.includes('years') || inputContext.includes('exp') || inputContext.includes('relevant')) {
+
+      if (inputType === 'date') {
+        answer = '2024-06-01';
+      } else if (inputContext.includes('experience') || inputContext.includes('years') || inputContext.includes('exp') || inputContext.includes('relevant')) {
         answer = `${candidate.experience_years || 2}`;
       } else if (inputContext.includes('notice') || inputContext.includes('how soon') || inputContext.includes('joining') || inputContext.includes('days')) {
-        answer = candidate.notice_period || 'Immediate / 15 days';
+        answer = inputType === 'number' ? '15' : (candidate.notice_period || 'Immediate / 15 days');
       } else if (inputContext.includes('current ctc') || inputContext.includes('present ctc') || inputContext.includes('fixed ctc')) {
         answer = '350000';
       } else if (inputContext.includes('expected ctc') || inputContext.includes('desired ctc') || inputContext.includes('salary') || inputContext.includes('compensation') || inputContext.includes('lpa')) {
@@ -977,42 +1036,13 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       console.log(`[HireMind Naukri] Typing answer: "${answer}"`);
       updateWidget('Filling Answer', Math.min(72 + turn * 2, 94), `Answer: "${answer.slice(0, 30)}..."`);
       await HireMindCommon.humanType(textInput, answer);
-      await HireMindCommon.delay(500);
+      await HireMindCommon.delay(400);
       handledInThisTurn = true;
     }
 
     // 6. CRITICAL: Locate and Click the "Save" / "Submit" / "Send" / "Next" / "Apply" Action Button
-    await HireMindCommon.delay(400);
-    const actionBtns = Array.from(container.querySelectorAll('button, input[type="submit"], div[role="button"], span[role="button"], a[class*="btn"]')).filter(b => {
-      const r = b.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return false;
-      const txt = (b.innerText || b.textContent || b.value || '').trim().toLowerCase();
-      return (
-        txt === 'save' ||
-        txt === 'submit' ||
-        txt === 'send' ||
-        txt === 'next' ||
-        txt === 'continue' ||
-        txt === 'apply' ||
-        txt === 'proceed' ||
-        txt === 'submit application' ||
-        txt === 'save & apply' ||
-        txt === 'save and apply' ||
-        txt === 'save & continue' ||
-        txt === 'save & next' ||
-        txt.includes('save') ||
-        txt.includes('submit') ||
-        txt.includes('send')
-      );
-    });
-
-    if (actionBtns.length > 0) {
-      // Click the deepest / last save button inside the active drawer
-      const saveBtn = actionBtns[actionBtns.length - 1];
-      const btnTxt = (saveBtn.innerText || saveBtn.value || 'Save').trim();
-      console.log(`[HireMind Naukri] Clicking screening action button: "${btnTxt}"`);
-      await HireMindCommon.humanClick(saveBtn);
-      await HireMindCommon.delay(2000);
+    const saveClicked = await clickActiveSaveButton(container);
+    if (saveClicked) {
       handledInThisTurn = true;
     } else if (textInputs.length > 0) {
       const lastInput = textInputs[textInputs.length - 1];
@@ -1025,8 +1055,8 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       return true;
     }
 
-    // If nothing was handled and no action buttons were found, wait 2s and re-verify
-    if (!handledInThisTurn && actionBtns.length === 0) {
+    // If nothing was handled and no save button was found, wait 2s and re-verify
+    if (!handledInThisTurn && !saveClicked) {
       await HireMindCommon.delay(2000);
       if (isNaukriAlreadyApplied()) {
         return true;
@@ -1088,7 +1118,7 @@ async function fillNaukriStandardForm(appId, candidate, resumeData, updateWidget
 }
 
 /**
- * Floating glassmorphic widget to show live status on page
+ * Floating glassmorphic widget to show live status on page (positioned on BOTTOM-LEFT so it never overlaps the chatbot drawer or Save button)
  */
 function createStatusWidget(jobTitle, company) {
   const div = document.createElement('div');
@@ -1096,7 +1126,7 @@ function createStatusWidget(jobTitle, company) {
   div.style.cssText = `
     position: fixed;
     bottom: 24px;
-    right: 24px;
+    left: 24px;
     z-index: 999999;
     background: rgba(15, 23, 42, 0.95);
     backdrop-filter: blur(12px);
