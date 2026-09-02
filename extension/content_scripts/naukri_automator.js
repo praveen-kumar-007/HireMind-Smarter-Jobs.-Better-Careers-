@@ -665,16 +665,22 @@ async function selectOptionElement(targetEl) {
 }
 
 /**
- * Find the active Save / Submit / Send / Next button in the drawer
+ * Reliably finds and clicks the Save / Next / Submit button in the questionnaire drawer
  */
-function findDrawerSaveButton() {
-  const allBtns = Array.from(document.querySelectorAll('button, input[type="submit"], div[role="button"], span[role="button"], a[class*="btn"], [class*="save"], [class*="submit"], [class*="primary"]')).filter(b => {
-    const r = b.getBoundingClientRect();
+async function clickDrawerSaveButton() {
+  await HireMindCommon.delay(500);
+
+  // 1. Search for any visible button/link/div with Save / Next / Submit text
+  const candidateElements = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a, input[type="submit"], input[type="button"], [class*="btn"], [class*="save"], [class*="submit"], [class*="action"], [class*="next"], [class*="primary"]')).filter(el => {
+    const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
-    const style = window.getComputedStyle(b);
+    const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
 
-    const txt = (b.innerText || b.textContent || b.value || '').trim().toLowerCase();
+    // Must be in the right half of the screen (inside drawer) or bottom area
+    if (r.left < window.innerWidth * 0.35 && r.top < window.innerHeight * 0.7) return false;
+
+    const txt = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
     
     // Ignore background Apply button on left
     if (txt === 'apply' && r.left < window.innerWidth * 0.4) return false;
@@ -691,166 +697,59 @@ function findDrawerSaveButton() {
       txt === 'save and apply' ||
       txt === 'save & continue' ||
       txt === 'save & next' ||
-      txt.includes('save') ||
-      txt.includes('submit') ||
-      txt.includes('send')
+      txt.startsWith('save') ||
+      txt.startsWith('submit') ||
+      txt.startsWith('next')
     );
   });
 
-  if (allBtns.length > 0) {
-    // Pick the lowest / deepest button inside the right-hand drawer
-    allBtns.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
-    return allBtns[0];
-  }
-
-  // Fallback: Check right half of screen for any active action button
-  const rightHalfBtns = Array.from(document.querySelectorAll('button, div[role="button"]')).filter(b => {
-    const r = b.getBoundingClientRect();
-    return r.left > window.innerWidth * 0.5 && r.top > window.innerHeight * 0.6 && r.width > 50 && r.height > 25;
-  });
-  if (rightHalfBtns.length > 0) {
-    return rightHalfBtns[rightHalfBtns.length - 1];
-  }
-
-  return null;
-}
-
-/**
- * Analyzes question text and candidate profile to determine whether Yes, No,
- * or a specific profile option is the correct, compliant answer.
- */
-function resolveQuestionIntent(questionText, candidate) {
-  const q = (questionText || '').toLowerCase().trim();
-
-  // Negative / Disqualification Check (Must Answer "No")
-  const negativeTriggers = [
-    'criminal',
-    'convict',
-    'illegal',
-    'felony',
-    'misconduct',
-    'terminated for cause',
-    'disciplinary',
-    'active backlog',
-    'standing arrears',
-    'non-compete',
-    'legal restriction',
-    'applied in the last 6 months',
-    'applied in last 6 months',
-    'applied in the past 6 months',
-    'previously worked at',
-    'previously interviewed',
-    'any litigation',
-    'require visa sponsorship',
-    'need sponsorship'
-  ];
-
-  for (const neg of negativeTriggers) {
-    if (q.includes(neg)) {
-      console.log(`[HireMind Naukri] Question intent classified as NEGATIVE ("No"): "${q}"`);
-      return { type: 'boolean', value: 'No', confidence: 0.95 };
+  let targetBtn = null;
+  if (candidateElements.length > 0) {
+    // Pick the lowest / bottom-most action button
+    candidateElements.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+    targetBtn = candidateElements[0];
+  } else {
+    // Fallback: Check right-hand bottom drawer for ANY clickable button
+    const rightBottomBtns = Array.from(document.querySelectorAll('button, div[role="button"], a.btn')).filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.left > window.innerWidth * 0.45 && r.top > window.innerHeight * 0.5 && r.width > 40 && r.height > 20;
+    });
+    if (rightBottomBtns.length > 0) {
+      rightBottomBtns.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+      targetBtn = rightBottomBtns[0];
     }
   }
 
-  // Affirmative Check (Answer "Yes")
-  const affirmativeTriggers = [
-    'relocate',
-    'living in',
-    'residing in',
-    'ready to move',
-    'comfortable with',
-    'willing to',
-    'ready to join',
-    'work authorization',
-    'authorized to work',
-    'valid passport',
-    'background check',
-    'background verification',
-    'drug test',
-    'shifts',
-    'night shift',
-    'rotational',
-    'weekend',
-    'travel',
-    'full time',
-    'permanent',
-    'agree',
-    'terms and conditions',
-    'eligible to work',
-    'completed degree',
-    'passed out',
-    'hands-on experience',
-    'skills in',
-    'experience in'
-  ];
+  if (targetBtn) {
+    const label = (targetBtn.innerText || targetBtn.value || 'Save').trim();
+    console.log(`[HireMind Naukri] Clicking Save/Submit button: "${label}"`, targetBtn);
+    targetBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await HireMindCommon.delay(150);
 
-  for (const aff of affirmativeTriggers) {
-    if (q.includes(aff)) {
-      console.log(`[HireMind Naukri] Question intent classified as AFFIRMATIVE ("Yes"): "${q}"`);
-      return { type: 'boolean', value: 'Yes', confidence: 0.95 };
+    // If button has disabled attribute, wait for React state to sync
+    if (targetBtn.disabled) {
+      await HireMindCommon.delay(600);
+      targetBtn.removeAttribute('disabled');
+      targetBtn.disabled = false;
     }
-  }
 
-  // Notice Period Check
-  if (q.includes('notice') || q.includes('how soon') || q.includes('joining')) {
-    return { type: 'notice', value: candidate.notice_period || 'Immediate / 15 days', confidence: 0.9 };
-  }
-
-  // Experience Check
-  if (q.includes('experience') || q.includes('years') || q.includes('exp')) {
-    return { type: 'experience', value: String(candidate.experience_years || 2), confidence: 0.9 };
-  }
-
-  // CTC / Salary Check
-  if (q.includes('ctc') || q.includes('salary') || q.includes('compensation') || q.includes('lpa')) {
-    return { type: 'ctc', value: candidate.expected_ctc || '500000', confidence: 0.9 };
-  }
-
-  // Location Check
-  if (q.includes('current location') || q.includes('current city') || q.includes('residence')) {
-    return { type: 'location', value: candidate.location || 'Bangalore, India', confidence: 0.9 };
-  }
-
-  return { type: 'boolean', value: 'Yes', confidence: 0.7 };
-}
-
-/**
- * Find option element matching the resolved desired answer
- */
-function findMatchingOptionForAnswer(desiredAnswer, root = document) {
-  const allElements = Array.from(root.querySelectorAll('*')).filter(el => {
-    const r = el.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return false;
-    if (el.children.length > 3) return false;
-    const txt = (el.innerText || el.textContent || '').trim();
-    return txt.length > 0 && txt.length < 60;
-  });
-
-  const desiredLower = (desiredAnswer || '').toLowerCase().trim();
-
-  // 1. Exact match (e.g. "Yes", "No", "Immediate", "15 days")
-  for (const el of allElements) {
-    const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-    if (
-      txt === desiredLower ||
-      txt === `○ ${desiredLower}` ||
-      txt === `● ${desiredLower}` ||
-      txt.startsWith(`${desiredLower} `) ||
-      txt === desiredLower.toUpperCase()
-    ) {
-      return el;
+    // Trigger full mouse and pointer sequence
+    for (const evt of ['mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      targetBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
     }
-  }
+    targetBtn.click();
 
-  // 2. Substring match
-  for (const el of allElements) {
-    const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-    if (txt.includes(desiredLower)) {
-      return el;
+    // If inside or containing a button element, click that too
+    const innerBtn = targetBtn.querySelector('button, span, div') || targetBtn.closest('button');
+    if (innerBtn && innerBtn !== targetBtn) {
+      innerBtn.click();
     }
+
+    await HireMindCommon.delay(1800);
+    return true;
   }
 
-  return null;
+  return false;
 }
 
 /**
@@ -966,17 +865,10 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       actedThisTurn = true;
     }
 
-    // 6. CRITICAL: Locate and Click the "Save" / "Submit" / "Send" / "Next" Button
-    await HireMindCommon.delay(400);
-    const saveBtn = findDrawerSaveButton();
-    if (saveBtn) {
-      const btnTxt = (saveBtn.innerText || saveBtn.value || 'Save').trim();
-      console.log(`[HireMind Naukri] Clicking Save/Submit button: "${btnTxt}"`);
-      updateWidget('Saving & Proceeding', Math.min(75 + turn * 2, 95), `Clicking "${btnTxt}"...`);
-      saveBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      await HireMindCommon.delay(100);
-      await HireMindCommon.humanClick(saveBtn);
-      await HireMindCommon.delay(2000);
+    // 6. CRITICAL: Automatically Locate and Click the "Save" / "Submit" / "Next" Button
+    updateWidget('Saving & Proceeding', Math.min(75 + turn * 2, 95), 'Clicking Save/Next button...');
+    const saveClicked = await clickDrawerSaveButton();
+    if (saveClicked) {
       actedThisTurn = true;
     }
 
@@ -986,11 +878,11 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
     }
 
     // If no action and no save button, wait and check if more questions exist
-    if (!actedThisTurn && !saveBtn) {
+    if (!actedThisTurn && !saveClicked) {
       await HireMindCommon.delay(1500);
       if (isNaukriAlreadyApplied()) return true;
-      const remainingSave = findDrawerSaveButton();
-      if (!remainingSave) {
+      const hasMoreSave = await clickDrawerSaveButton();
+      if (!hasMoreSave) {
         console.log('[HireMind Naukri] No more active questions or save buttons found.');
         break;
       }
