@@ -130,6 +130,14 @@ async function runNaukriAutomation(appId, job, candidate, resumeData, updateWidg
   let pageState = await waitForNaukriPageState(job, 15000, updateWidget);
   console.log('[HireMind] Detected page state:', pageState.type);
 
+  // Case 0: Active Chatbot / Questions Drawer Already Open
+  if (pageState.type === 'chatbot') {
+    console.log('[HireMind] Questions drawer is active. Answering screening questions...');
+    await handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget);
+    await finishAndExit(appId, job, updateWidget, 'Successfully applied');
+    return;
+  }
+
   // Case A: Already Applied
   if (pageState.type === 'applied') {
     await finishAndExit(appId, job, updateWidget, 'Already applied');
@@ -377,29 +385,17 @@ async function handleCampusPortalFlow(appId, job, candidate, resumeData, updateW
 }
 
 /**
- * Handle success confirmation, 3s wait, focus dashboard, and 5s auto-close
+ * Handle success confirmation and notify dashboard
  */
 async function finishAndExit(appId, job, updateWidget, statusMsg) {
   console.log(`[HireMind] ${statusMsg}`);
   console.log('[HireMind] Applied');
-  updateWidget('Applied Verified', 100, `Verified: ${statusMsg}. Returning to dashboard in 3s...`);
+  updateWidget('Successfully Applied 🎉', 100, `Completed: ${statusMsg} for ${job.title}!`);
   await HireMindCommon.logStep(appId, 'Applied', 100, `Verified: ${statusMsg} for '${job.title}' on ${job.company}.`);
   await HireMindCommon.updateStatus(appId, 'Applied', `${statusMsg} on Naukri.`);
 
-  // Wait 3 seconds to confirm
-  await HireMindCommon.delay(3000);
-
-  // Switch back to HireMind dashboard tab and focus window
-  try {
-    console.log('[HireMind] Switching back to main HireMind dashboard tab...');
-    await HireMindCommon.sendMessage('FOCUS_DASHBOARD_TAB');
-  } catch (e) {}
-
-  // Countdown & auto-close in 5 seconds
-  updateWidget('Completed', 100, 'Completed! Auto-closing tab in 5s (or click ✕ to close now)...');
-  try {
-    await HireMindCommon.sendMessage('CLOSE_TAB_AFTER_DELAY', { delayMs: 5000 });
-  } catch (e) {}
+  // Keep tab open for user verification
+  console.log('[HireMind] Application flow complete. Tab remains open for user review.');
 }
 
 /**
@@ -411,6 +407,12 @@ async function waitForNaukriPageState(job, maxWaitMs = 12000, updateWidget) {
   while (Date.now() - startTime < maxWaitMs) {
     const elapsedSec = Math.round((Date.now() - startTime) / 1000);
     if (updateWidget) updateWidget('Scanning Page', Math.min(25 + elapsedSec * 3, 45), `Scanning for apply triggers (${elapsedSec}s)...`);
+
+    // 0. Check if active chatbot / questionnaire drawer is already open
+    const openOptions = findAllChatbotOptions(document);
+    if (openOptions.length > 0) {
+      return { type: 'chatbot' };
+    }
 
     // 1. Check if Already Applied
     if (isNaukriAlreadyApplied()) {
@@ -453,6 +455,8 @@ async function waitForNaukriPageState(job, maxWaitMs = 12000, updateWidget) {
   }
 
   // Final fallback check
+  const fallbackOptions = findAllChatbotOptions(document);
+  if (fallbackOptions.length > 0) return { type: 'chatbot' };
   if (isNaukriAlreadyApplied()) return { type: 'applied' };
   const finalComp = findCompanySiteButton();
   if (finalComp) return { type: 'company_site', element: finalComp };
@@ -466,31 +470,34 @@ async function waitForNaukriPageState(job, maxWaitMs = 12000, updateWidget) {
  * Detect if user has already applied on Naukri
  */
 function isNaukriAlreadyApplied() {
-  const bodyText = document.body ? (document.body.innerText || document.body.textContent || '').toLowerCase() : '';
-  if (
-    bodyText.includes('already applied') || 
-    bodyText.includes('application sent') || 
-    bodyText.includes('applied on') || 
-    bodyText.includes('you have applied') ||
-    bodyText.includes('application submitted') ||
-    bodyText.includes('successfully applied') ||
-    bodyText.includes('applied successfully') ||
-    bodyText.includes('thank you for applying') ||
-    bodyText.includes('your application has been submitted') ||
-    bodyText.includes('applied for this job')
-  ) {
-    return true;
-  }
+  // If questions drawer or options are visible on screen, application is active, not done
+  const options = findAllChatbotOptions(document);
+  if (options.length > 0) return false;
 
-  const allElements = Array.from(document.querySelectorAll('*'));
-  for (const el of allElements) {
+  const rightDrawerQuestions = Array.from(document.querySelectorAll('p, div, span, h2, h3')).filter(el => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.left > window.innerWidth * 0.4 && (el.innerText || '').includes('?');
+  });
+  if (rightDrawerQuestions.length > 0) return false;
+
+  // Check for explicit applied confirmation badge or button text
+  const confirmationElements = Array.from(document.querySelectorAll('button, span, div, h1, h2, h3, p')).filter(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
     const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-    if (txt === 'applied' || txt === 'already applied' || txt === 'application sent' || txt === 'applied successfully' || txt.startsWith('applied on')) {
-      return true;
-    }
-  }
+    return (
+      txt === 'applied' ||
+      txt === 'already applied' ||
+      txt === 'application sent' ||
+      txt === 'applied successfully' ||
+      txt === 'successfully applied' ||
+      txt.startsWith('applied on ') ||
+      txt.includes('thank you for applying') ||
+      txt.includes('your application has been submitted')
+    );
+  });
 
-  return false;
+  return confirmationElements.length > 0;
 }
 
 /**
