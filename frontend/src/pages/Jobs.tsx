@@ -414,32 +414,38 @@ export default function Jobs() {
       
       const isExtInstalled = hasExtension || (window as any).__HIREMIND_EXTENSION_INSTALLED__ || document.documentElement.hasAttribute('data-hiremind-extension');
       
-      if (isExtInstalled) {
-        const token = localStorage.getItem('access_token') || '';
-        const serverUrl = window.location.origin.includes('localhost')
-          ? 'http://localhost:8000'
-          : 'https://hiremind-smarter-jobs-better-careers.onrender.com';
+      const token = localStorage.getItem('access_token') || '';
+      const serverUrl = window.location.origin.includes('localhost')
+        ? 'http://localhost:8000'
+        : 'https://hiremind-smarter-jobs-better-careers.onrender.com';
 
-        window.postMessage({
-          type: 'HIREMIND_START_APPLY',
-          appId: appId,
-          job: payload.job,
-          token,
-          serverUrl
-        }, '*');
+      // 1. Dispatch message to extension bridge
+      window.postMessage({
+        type: 'HIREMIND_START_APPLY',
+        appId: appId,
+        job: payload.job,
+        token,
+        serverUrl
+      }, '*');
 
-        return {
-          data: {
-            status: 'started',
-            message: 'Chrome Extension native automation launched in browser tab with your active login!'
-          },
-          job: payload.job
-        };
+      // 2. If extension bridge not detected in DOM, open directly in browser tab so content script automator takes over
+      if (!isExtInstalled) {
+        let targetJobUrl = (payload.job.url || '').trim();
+        if (!targetJobUrl.startsWith('http')) {
+          targetJobUrl = `https://www.naukri.com${targetJobUrl.startsWith('/') ? '' : '/'}${targetJobUrl}`;
+        }
+        const sep = targetJobUrl.includes('?') ? '&' : '?';
+        const directApplyUrl = `${targetJobUrl}${sep}hiremind_app_id=${appId}`;
+        window.open(directApplyUrl, '_blank');
       }
 
-      // 2. Fallback to server-side Playwright runner
-      const applyResponse = await api.post(`/applications/${appId}/auto-fill`)
-      return { data: applyResponse.data, job: payload.job }
+      return {
+        data: {
+          status: 'started',
+          message: 'Job application session launched in browser tab with your active login!'
+        },
+        job: payload.job
+      };
     },
     onSuccess: (res) => {
       setAutoApplyingJobId(null)
