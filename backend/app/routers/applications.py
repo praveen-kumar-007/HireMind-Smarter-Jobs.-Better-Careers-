@@ -16,7 +16,7 @@ from app.schemas.application import (
     ApplicationEventCreate,
     ApplicationStatusUpdate
 )
-from app.routers.deps import get_current_user
+from app.routers.deps import get_current_user, get_current_user_optional
 from app.services.ai_service import ai_service
 from app.services.rag_service import rag_service
 from app.services.crawl_ai_service import crawl_ai_service
@@ -723,28 +723,31 @@ async def crawl_job_listing_endpoint(
 def get_extension_application_context(
     app_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Retrieve full job and candidate context for the Chrome Extension automation agent."""
-    app = db.query(Application).filter(
-        Application.id == app_id,
-        Application.user_id == current_user.id
-    ).first()
+    app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    profile = current_user.profile
-    latest_resume = db.query(ResumeVersion).join(Resume).filter(
-        Resume.user_id == current_user.id,
-        Resume.is_active == True
-    ).order_by(ResumeVersion.id.desc()).first()
+    target_user = current_user or app.user
+    if not target_user:
+        target_user = db.query(User).filter(User.id == app.user_id).first()
+
+    profile = target_user.profile if target_user else None
+    latest_resume = None
+    if target_user:
+        latest_resume = db.query(ResumeVersion).join(Resume).filter(
+            Resume.user_id == target_user.id,
+            Resume.is_active == True
+        ).order_by(ResumeVersion.id.desc()).first()
 
     parsed = latest_resume.parsed_data if (latest_resume and latest_resume.parsed_data) else {}
     
     # Candidate details
     candidate_info = {
         "full_name": (profile.full_name if profile and profile.full_name else parsed.get("name", "Applicant")),
-        "email": current_user.email,
+        "email": target_user.email if target_user else "",
         "phone": (profile.phone if profile and profile.phone else parsed.get("phone", "")),
         "location": (profile.location if profile and profile.location else parsed.get("location", "")),
         "notice_period": (profile.notice_period if profile and profile.notice_period else "Immediate"),
@@ -782,13 +785,10 @@ def log_extension_event(
     app_id: int,
     request: ApplicationEventCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Log real-time application step event from the Chrome Extension into telemetry stream."""
-    app = db.query(Application).filter(
-        Application.id == app_id,
-        Application.user_id == current_user.id
-    ).first()
+    app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found.")
 
@@ -801,12 +801,14 @@ def log_extension_event(
     )
     db.add(event)
 
-    audit = AuditLog(
-        user_id=current_user.id,
-        event=request.step,
-        details=request.status_text
-    )
-    db.add(audit)
+    user_id = current_user.id if current_user else app.user_id
+    if user_id:
+        audit = AuditLog(
+            user_id=user_id,
+            event=request.step,
+            details=request.status_text
+        )
+        db.add(audit)
     db.commit()
 
     return {"status": "logged", "event_id": event.id}
@@ -816,14 +818,11 @@ def update_extension_application_status(
     app_id: int,
     request: ApplicationStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Update application final status and audit notes from Chrome Extension."""
     import datetime
-    app = db.query(Application).filter(
-        Application.id == app_id,
-        Application.user_id == current_user.id
-    ).first()
+    app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found.")
 
@@ -831,16 +830,19 @@ def update_extension_application_status(
     if request.notes:
         app.notes = request.notes
     if request.status == "Applied":
-        app.applied_date = datetime.datetime.utcnow()
+        app.applied_at = datetime.datetime.utcnow()
 
-    audit = AuditLog(
-        user_id=current_user.id,
-        event=f"Status Updated to {request.status}",
-        details=request.notes or f"Application status changed to {request.status} via Chrome Extension."
-    )
-    db.add(audit)
+    user_id = current_user.id if current_user else app.user_id
+    if user_id:
+        audit = AuditLog(
+            user_id=user_id,
+            event=f"Status Updated to {request.status}",
+            details=request.notes or f"Application status changed to {request.status} via Chrome Extension."
+        )
+        db.add(audit)
     db.commit()
     db.refresh(app)
+    return app
 
     return {"status": "updated", "app_status": app.status, "notes": app.notes}
 

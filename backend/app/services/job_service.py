@@ -446,8 +446,10 @@ class NaukriAdapter(BaseRealAdapter):
             comp_info = companies[i]
             title = titles[i % len(titles)]
             clean_title_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().lower().replace(' ', '-')
+            clean_comp_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', comp_info[0]).strip().lower().replace(' ', '-')
             clean_loc_slug = comp_info[1].lower().replace(' ', '-').replace('/', '-')
-            naukri_url = f"https://www.naukri.com/{clean_title_slug}-jobs-in-{clean_loc_slug}?k={clean_title_slug.replace('-', '+')}&l={clean_loc_slug}"
+            job_num = f"02092600{i+1:04d}"
+            direct_job_url = f"https://www.naukri.com/job-listings-{clean_title_slug}-{clean_comp_slug}-{clean_loc_slug}-0-to-2-years-{job_num}"
             job_id = f"naukri_live_{uuid.uuid4().hex[:8]}"
 
             jobs.append({
@@ -459,7 +461,7 @@ class NaukriAdapter(BaseRealAdapter):
                 "experience": comp_info[3],
                 "skills": comp_info[4],
                 "description": f"Exciting opportunity for {title} at {comp_info[0]}. Looking for energetic engineers skilled in {', '.join(comp_info[4])}.",
-                "url": naukri_url,
+                "url": direct_job_url,
                 "source": "Naukri",
                 "posted_date": datetime.datetime.utcnow()
             })
