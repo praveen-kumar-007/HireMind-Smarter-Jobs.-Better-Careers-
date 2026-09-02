@@ -9,7 +9,12 @@ import urllib.request
 from urllib.parse import urlparse
 from datetime import datetime
 import logging
-from playwright.sync_api import sync_playwright, Page
+from typing import Any
+try:
+    from playwright.sync_api import sync_playwright, Page  # type: ignore
+except ImportError:
+    sync_playwright = None  # type: ignore
+    Page = Any  # type: ignore
 from sqlalchemy.orm import Session
 from app.models.application import Application, ApplicationEvent, AuditLog, ApplicationAnswer
 from app.models.job import Job, JobSkill, JobMatch

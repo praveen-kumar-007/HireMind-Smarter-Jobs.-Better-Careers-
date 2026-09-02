@@ -39,15 +39,15 @@ def on_startup():
     finally:
         db.close()
 
-    # On cloud / Linux startup, ensure Playwright Chromium binary is installed
+    # Optional cloud playwright check if playwright module is present
     import sys
-    if sys.platform != "win32":
-        try:
+    try:
+        import playwright
+        if sys.platform != "win32":
             import subprocess
-            logger.info("Ensuring Playwright Chromium binaries are available for cloud automation...")
             subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
-        except Exception as e_pw:
-            logger.warning(f"Playwright cloud initialization notice: {e_pw}")
+    except ImportError:
+        pass
 
 # Router Mounts
 app.include_router(auth.router, prefix="/api")

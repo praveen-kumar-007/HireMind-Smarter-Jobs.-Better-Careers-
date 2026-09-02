@@ -6,8 +6,10 @@ from app.models.job import Job, JobSkill
 from app.models.user import UserPlatformCredential, Profile
 from app.services.email_service import email_verification_service
 from app.services.ai_service import ai_service
-from app.core.config import settings
-from playwright.sync_api import sync_playwright
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None
 
 logger = logging.getLogger(__name__)
 
