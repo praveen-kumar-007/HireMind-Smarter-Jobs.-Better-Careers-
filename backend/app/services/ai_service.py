@@ -9,10 +9,12 @@ if backend_dir not in sys.path:
 import re
 import json
 import logging
-import time
 import requests
-from typing import Optional, Dict, Any, List
-from ollama import Client  # type: ignore
+from typing import Optional, Dict, Any, List, Union, Tuple
+try:
+    from ollama import Client  # type: ignore
+except ImportError:
+    Client = None  # type: ignore
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
