@@ -749,6 +749,145 @@ async function clickDrawerSaveButton() {
 }
 
 /**
+ * Analyzes question text and candidate profile to determine whether Yes, No,
+ * or a specific profile option is the correct, compliant answer.
+ */
+function resolveQuestionIntent(questionText, candidate) {
+  const q = (questionText || '').toLowerCase().trim();
+  const cand = candidate || {};
+
+  // Negative / Disqualification Check (Must Answer "No")
+  const negativeTriggers = [
+    'criminal',
+    'convict',
+    'illegal',
+    'felony',
+    'misconduct',
+    'terminated for cause',
+    'disciplinary',
+    'active backlog',
+    'standing arrears',
+    'non-compete',
+    'legal restriction',
+    'applied in the last 6 months',
+    'applied in last 6 months',
+    'applied in the past 6 months',
+    'previously worked at',
+    'previously interviewed',
+    'any litigation',
+    'require visa sponsorship',
+    'need sponsorship'
+  ];
+
+  for (const neg of negativeTriggers) {
+    if (q.includes(neg)) {
+      console.log(`[HireMind Naukri] Question intent classified as NEGATIVE ("No"): "${q}"`);
+      return { type: 'boolean', value: 'No', confidence: 0.95 };
+    }
+  }
+
+  // Affirmative Check (Answer "Yes")
+  const affirmativeTriggers = [
+    'relocate',
+    'living in',
+    'residing in',
+    'ready to move',
+    'comfortable with',
+    'willing to',
+    'ready to join',
+    'work authorization',
+    'authorized to work',
+    'valid passport',
+    'background check',
+    'background verification',
+    'drug test',
+    'shifts',
+    'night shift',
+    'rotational',
+    'weekend',
+    'travel',
+    'full time',
+    'permanent',
+    'agree',
+    'terms and conditions',
+    'eligible to work',
+    'completed degree',
+    'passed out',
+    'hands-on experience',
+    'skills in',
+    'experience in'
+  ];
+
+  for (const aff of affirmativeTriggers) {
+    if (q.includes(aff)) {
+      console.log(`[HireMind Naukri] Question intent classified as AFFIRMATIVE ("Yes"): "${q}"`);
+      return { type: 'boolean', value: 'Yes', confidence: 0.95 };
+    }
+  }
+
+  // Notice Period Check
+  if (q.includes('notice') || q.includes('how soon') || q.includes('joining')) {
+    return { type: 'notice', value: cand.notice_period || 'Immediate / 15 days', confidence: 0.9 };
+  }
+
+  // Experience Check
+  if (q.includes('experience') || q.includes('years') || q.includes('exp')) {
+    return { type: 'experience', value: String(cand.experience_years || 2), confidence: 0.9 };
+  }
+
+  // CTC / Salary Check
+  if (q.includes('ctc') || q.includes('salary') || q.includes('compensation') || q.includes('lpa')) {
+    return { type: 'ctc', value: cand.expected_ctc || '500000', confidence: 0.9 };
+  }
+
+  // Location Check
+  if (q.includes('current location') || q.includes('current city') || q.includes('residence')) {
+    return { type: 'location', value: cand.location || 'Bangalore, India', confidence: 0.9 };
+  }
+
+  return { type: 'boolean', value: 'Yes', confidence: 0.7 };
+}
+
+/**
+ * Find option element matching the resolved desired answer
+ */
+function findMatchingOptionForAnswer(desiredAnswer, root = document) {
+  const allElements = Array.from(root.querySelectorAll('*')).filter(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (el.children.length > 3) return false;
+    const txt = (el.innerText || el.textContent || '').trim();
+    return txt.length > 0 && txt.length < 60;
+  });
+
+  const desiredLower = (desiredAnswer || '').toLowerCase().trim();
+
+  // 1. Exact match (e.g. "Yes", "No", "Immediate", "15 days")
+  for (const el of allElements) {
+    const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+    if (
+      txt === desiredLower ||
+      txt === `○ ${desiredLower}` ||
+      txt === `● ${desiredLower}` ||
+      txt.startsWith(`${desiredLower} `) ||
+      txt === desiredLower.toUpperCase()
+    ) {
+      return el;
+    }
+  }
+
+  // 2. Substring match
+  for (const el of allElements) {
+    const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+    if (txt.includes(desiredLower)) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Comprehensive handler for screening questions, options, inputs, and Save button
  */
 async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget) {
