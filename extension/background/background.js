@@ -226,24 +226,20 @@ async function handleStartApply({ appId, jobUrl, token, serverUrl }, sendRespons
     console.log(`[HireMind Background] Starting native apply for App #${appId} on URL: ${jobUrl}`);
 
     let targetUrl = (jobUrl || '').trim();
-    if (!targetUrl.startsWith('http')) {
+    if (!targetUrl) {
+      targetUrl = 'https://www.naukri.com';
+    } else if (!targetUrl.startsWith('http')) {
       targetUrl = `https://www.naukri.com${targetUrl.startsWith('/') ? '' : '/'}${targetUrl}`;
     }
 
-    // If targetUrl contains a mock/broken numeric slug that redirects to homepage, convert to live search link
-    if (targetUrl.includes('job-listings-') && !/\d{11,}/.test(targetUrl)) {
-      const slugMatch = targetUrl.match(/job-listings-([a-z0-9-]+)/i);
-      const rawSlug = slugMatch ? slugMatch[1].replace(/-\d+$/, '') : 'software-developer';
-      const cleanSlug = rawSlug.replace(/[^a-z0-9-]/gi, '-');
-      targetUrl = `https://www.naukri.com/${cleanSlug}-jobs-in-india?k=${cleanSlug.replace(/-/g, '+')}`;
+    // Attach hiremind_app_id parameter so content script always identifies the task
+    if (!targetUrl.includes('hiremind_app_id=')) {
+      const separator = targetUrl.includes('?') ? '&' : '?';
+      targetUrl = `${targetUrl}${separator}hiremind_app_id=${appId}`;
     }
 
-    // Attach hiremind_app_id parameter so content script always identifies the task
-    const separator = targetUrl.includes('?') ? '&' : '?';
-    const finalUrl = `${targetUrl}${separator}hiremind_app_id=${appId}`;
-
     // Create a new foreground tab for applying
-    chrome.tabs.create({ url: finalUrl, active: true }, (tab) => {
+    chrome.tabs.create({ url: targetUrl, active: true }, (tab) => {
       if (tab && tab.id) {
         activeTabAppMap.set(tab.id, appId);
         chrome.storage.local.get(['activeApps'], (res) => {
@@ -465,6 +461,20 @@ async function handleDeleteExpiredJob(message, sendResponse) {
     sendResponse({ status: 'error', message: err.message });
   }
 }
+
+// Listen for tab completions to ensure automation triggers reliably
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && activeTabAppMap.has(tabId)) {
+    const appId = activeTabAppMap.get(tabId);
+    if (tab.url && (tab.url.includes('naukri.com') || tab.url.includes('naukricampus.com') || tab.url.includes('linkedin.com') || tab.url.includes('indeed.com'))) {
+      setTimeout(() => {
+        chrome.tabs.sendMessage(tabId, { action: 'START_APPLY_NOW', appId }, () => {
+          if (chrome.runtime?.lastError) {}
+        });
+      }, 500);
+    }
+  }
+});
 
 // Clean up closed tabs from active mapping
 chrome.tabs.onRemoved.addListener((tabId) => {

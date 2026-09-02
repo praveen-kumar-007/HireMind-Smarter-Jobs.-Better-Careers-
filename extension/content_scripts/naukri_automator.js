@@ -7,8 +7,11 @@
 (async function () {
   console.log('[HireMind Naukri] Script loaded on:', window.location.href);
 
+  let isRunning = false;
+
   // Check if this tab is part of an active application task
   async function checkAndTriggerAutomation(forcedAppId = null) {
+    if (isRunning) return;
     let targetAppId = forcedAppId;
 
     if (!targetAppId) {
@@ -26,6 +29,7 @@
       return;
     }
 
+    isRunning = true;
     console.log(`[HireMind Naukri] Activating automation for App ID: ${targetAppId}`);
 
     // Fetch full context from backend
@@ -90,12 +94,14 @@
     });
   }
 
-  // Automatically check on load
+  // Automatically check on load and load events
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => checkAndTriggerAutomation());
   } else {
     checkAndTriggerAutomation();
   }
+  window.addEventListener('load', () => checkAndTriggerAutomation());
+  setTimeout(() => checkAndTriggerAutomation(), 1500);
 })();
 
 /**
