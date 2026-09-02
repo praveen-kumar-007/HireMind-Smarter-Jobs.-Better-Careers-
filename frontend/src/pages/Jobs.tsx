@@ -419,6 +419,13 @@ export default function Jobs() {
         ? 'http://localhost:8000'
         : 'https://hiremind-smarter-jobs-better-careers.onrender.com';
 
+      let targetJobUrl = (payload.job.url || '').trim();
+      if (!targetJobUrl.startsWith('http')) {
+        targetJobUrl = `https://www.naukri.com${targetJobUrl.startsWith('/') ? '' : '/'}${targetJobUrl}`;
+      }
+      const sep = targetJobUrl.includes('?') ? '&' : '?';
+      const directApplyUrl = `${targetJobUrl}${sep}hiremind_app_id=${appId}`;
+
       // 1. Dispatch message to extension bridge
       window.postMessage({
         type: 'HIREMIND_START_APPLY',
@@ -428,16 +435,8 @@ export default function Jobs() {
         serverUrl
       }, '*');
 
-      // 2. If extension bridge not detected in DOM, open directly in browser tab so content script automator takes over
-      if (!isExtInstalled) {
-        let targetJobUrl = (payload.job.url || '').trim();
-        if (!targetJobUrl.startsWith('http')) {
-          targetJobUrl = `https://www.naukri.com${targetJobUrl.startsWith('/') ? '' : '/'}${targetJobUrl}`;
-        }
-        const sep = targetJobUrl.includes('?') ? '&' : '?';
-        const directApplyUrl = `${targetJobUrl}${sep}hiremind_app_id=${appId}`;
-        window.open(directApplyUrl, '_blank');
-      }
+      // 2. Open Naukri job tab directly so the content script automator starts immediately
+      window.open(directApplyUrl, '_blank');
 
       return {
         data: {
