@@ -195,10 +195,13 @@ function handleFocusDashboard(sendResponse) {
 function findAndFocusDashboard(sendResponse) {
   chrome.tabs.query({}, (tabs) => {
     const dashboardTab = tabs.find(t => 
-      t.url && (t.url.includes('localhost:5173') || t.url.includes('vercel.app') || t.url.includes('/jobs'))
+      t.url && (t.url.includes('localhost') || t.url.includes('127.0.0.1') || t.url.includes('vercel.app') || t.url.includes('onrender.com') || t.url.includes('/jobs') || t.url.includes('hiremind') || t.url.includes('hire-mind'))
     );
     if (dashboardTab && dashboardTab.id) {
       lastDashboardTabId = dashboardTab.id;
+      if (dashboardTab.windowId) {
+        chrome.windows.update(dashboardTab.windowId, { focused: true }, () => {});
+      }
       chrome.tabs.update(dashboardTab.id, { active: true }, () => {
         if (sendResponse) sendResponse({ status: 'ok', tabId: dashboardTab.id });
       });
