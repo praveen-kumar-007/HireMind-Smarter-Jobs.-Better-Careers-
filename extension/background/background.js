@@ -21,7 +21,7 @@ async function getServerUrl() {
       const isLocal = tabs.some(t => t.url && (t.url.includes('localhost') || t.url.includes('127.0.0.1')));
       url = isLocal ? DEFAULT_SERVER_URL : PROD_SERVER_URL;
     } catch (e) {
-      url = DEFAULT_SERVER_URL;
+      url = PROD_SERVER_URL;
     }
   }
   if (url.endsWith('/')) url = url.slice(0, -1);

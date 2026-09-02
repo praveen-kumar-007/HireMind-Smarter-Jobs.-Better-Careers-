@@ -11,8 +11,8 @@
     let targetAppId = forcedAppId;
 
     if (!targetAppId) {
-      const { appId } = await HireMindCommon.sendMessage('GET_ACTIVE_APP_FOR_TAB');
-      targetAppId = appId;
+      const res = await HireMindCommon.sendMessage('GET_ACTIVE_APP_FOR_TAB');
+      targetAppId = res?.appId;
     }
 
     if (!targetAppId) {
@@ -70,12 +70,14 @@
   }
 
   // Listen for direct popup trigger
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.action === 'START_APPLY_NOW') {
-      checkAndTriggerAutomation(msg.appId || 'manual_tab');
-      sendResponse({ status: 'started' });
-    }
-  });
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg.action === 'START_APPLY_NOW') {
+        checkAndTriggerAutomation(msg.appId || 'manual_tab');
+        sendResponse({ status: 'started' });
+      }
+    });
+  }
 
   // Automatically check on load
   if (document.readyState === 'loading') {
@@ -105,239 +107,6 @@ async function runNaukriAutomation(appId, job, candidate, resumeData, updateWidg
   }
 
   // Step 2: Dynamic SPA Page Scanner (polls for up to 15s for React/DOM elements to hydrate)
-  updateWidget('Scanning Page', 30, 'Scanning job page for apply options and active sessions...');
-  await HireMindCommon.logStep(appId, 'Scanning Page', 30, 'Scanning Naukri job page elements and checking session...');
-
-  let pageState = await waitForNaukriPageState(job, 15000, updateWidget);
-  console.log('[HireMind] Detected page state:', pageState.type);
-
-  // Case A: Already Applied
-  if (pageState.type === 'applied') {
-    await finishAndExit(appId, job, updateWidget, 'Already applied');
-    return;
-  }
-
-  // Case B: Job Expired
-  if (pageState.type === 'expired') {
-    console.log('[HireMind] Job is expired on Naukri.');
-    updateWidget('Job Expired', 100, 'This job posting has expired on Naukri.');
-    await HireMindCommon.logStep(appId, 'Job Expired', 100, `Listing for '${job.title}' is expired on Naukri.`);
-    await HireMindCommon.updateStatus(appId, 'Dismissed', 'Job expired on Naukri.');
-    await HireMindCommon.delay(3000);
-    try { await HireMindCommon.sendMessage('FOCUS_DASHBOARD_TAB'); } catch (e) {}
-    try { await HireMindCommon.sendMessage('CLOSE_TAB_AFTER_DELAY', { delayMs: 5000 }); } catch (e) {}
-    return;
-  }
-
-  // Case C: External Company Website Apply
-  if (pageState.type === 'company_site') {
-    console.log('[HireMind] Company website detected - Sending to Manual Intervention');
-    updateWidget('Company Website', 100, 'This job requires applying directly on company website.');
-    await HireMindCommon.logStep(appId, 'Company Website Detected', 100, `Naukri listing for '${job.title}' requires applying on company website.`);
-    await HireMindCommon.updateStatus(appId, 'Manual Intervention', 'Company website application - manual apply required.');
-    return;
-  }
-
-  // Case D: Apply Button Missing / Timeout
-  if (pageState.type !== 'apply_button' || !pageState.element) {
-    if (isNaukriAlreadyApplied()) {
-      await finishAndExit(appId, job, updateWidget, 'Already applied');
-      return;
-    }
-
-    console.log('[HireMind] Apply button missing on page');
-    updateWidget('Review Required', 90, 'Could not locate a direct Apply / Interested button.');
-    await HireMindCommon.logStep(appId, 'Apply Button Missing', 90, `No direct Apply button found on page for '${job.title}'.`);
-    await HireMindCommon.updateStatus(appId, 'Manual Intervention', 'Could not locate Apply button.');
-    return;
-  }
-
-  // Step 3: Click the Apply / Interested / Quick Apply Button
-  const applyBtn = pageState.element;
-  const btnLabel = (applyBtn.innerText || '').trim();
-  console.log(`[HireMind] Clicking Apply button: "${btnLabel}"`);
-  updateWidget('Clicking Apply', 40, `Clicking "${btnLabel}" on ${job.company}...`);
-  await HireMindCommon.logStep(appId, 'Clicking Apply', 40, `Clicking "${btnLabel}" button for '${job.title}'...`);
-
-  await HireMindCommon.humanClick(applyBtn);
-
-  // Step 4: Mandatory 5-Second Wait for form / drawer / confirmation to load
-  console.log('[HireMind] Waiting 5 seconds for page response / questions...');
-  updateWidget('Waiting (5s)', 50, 'Waiting 5 seconds for page response / screening questions...');
-  await HireMindCommon.delay(5000);
-
-  // Step 5: Check Immediate Confirmation after 5 seconds
-  if (isNaukriAlreadyApplied()) {
-    await finishAndExit(appId, job, updateWidget, 'Successfully applied');
-    return;
-  }
-
-  // Step 6: Handle Naukri Chatbot Questionnaire Drawer with AI Analysis
-  updateWidget('Checking Questionnaire', 65, 'Scanning for screening questions / chatbot...');
-  const drawerHandled = await handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget);
-
-  if (isNaukriAlreadyApplied()) {
-    await finishAndExit(appId, job, updateWidget, 'Successfully applied');
-    return;
-  }
-
-  // Step 7: Handle Standard Modal Form Fields
-  await fillNaukriStandardForm(appId, candidate, resumeData, updateWidget);
-  await HireMindCommon.delay(3000);
-
-  // Step 8: Final Submission Check
-  if (isNaukriAlreadyApplied()) {
-    await finishAndExit(appId, job, updateWidget, 'Successfully applied');
-  } else {
-    console.log('[HireMind] Screening completed - Human confirmation required');
-    updateWidget('Review Required', 90, 'Screening completed. Please review tab to confirm.');
-    await HireMindCommon.logStep(appId, 'Human Review Required', 90, 'Screening answered. Please check open tab to confirm.');
-    await HireMindCommon.updateStatus(appId, 'Review Required', 'Screening form filled; pending final confirmation.');
-  }
-}
-
-/**
- * Dedicated automation handler for Naukri Campus student portal
- */
-async function handleCampusPortalFlow(appId, job, candidate, resumeData, updateWidget) {
-  try {
-    // 1. Check if an apply / interested button is already visible in an open drawer
-    let applyBtn = findNaukriApplyButton();
-    if (applyBtn) {
-      console.log('[HireMind Campus] Found visible Apply button directly in drawer.');
-      return false; // Let standard sequence click and process it
-    }
-
-    // 2. Scan visible job cards on the Campus homepage / feed
-    const cards = Array.from(document.querySelectorAll('div[class*="card"], [class*="jobCard"], [class*="tuple"], article, div[class*="recommended"] div')).filter(el => {
-      const r = el.getBoundingClientRect();
-      return r.width > 60 && r.height > 40;
-    });
-
-    const targetTokens = ((job.title || '') + ' ' + (job.company || '')).toLowerCase().split(' ').filter(w => w.length > 2);
-    let matchedCard = null;
-
-    for (const card of cards) {
-      const txt = (card.innerText || '').toLowerCase();
-      if (targetTokens.some(tok => txt.includes(tok))) {
-        matchedCard = card;
-        break;
-      }
-    }
-
-    // If no exact match on homepage cards, use the Campus top search bar
-    if (!matchedCard) {
-      const searchInput = document.querySelector('input[placeholder*="Search jobs"], input[placeholder*="Search"], input[type="search"], .search-input, input[type="text"]');
-      if (searchInput) {
-        console.log(`[HireMind Campus] Typing "${job.title}" into Campus search bar...`);
-        updateWidget('Searching Campus', 25, `Searching for "${job.title}" in Campus jobs...`);
-        await HireMindCommon.logStep(appId, 'Searching Campus Jobs', 25, `Searching for '${job.title}' in Campus portal...`);
-
-        searchInput.focus();
-        await HireMindCommon.humanType(searchInput, job.title);
-        await HireMindCommon.delay(500);
-
-        // Click search icon or hit Enter
-        const searchBtn = document.querySelector('button[type="submit"], [class*="searchIcon"], [class*="search-icon"], [class*="searchBtn"], svg[class*="search"]')?.closest('button, span, div[role="button"]');
-        if (searchBtn && searchBtn !== searchInput) {
-          await HireMindCommon.humanClick(searchBtn);
-        } else {
-          searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-        }
-        await HireMindCommon.delay(3500);
-      } else {
-        // Fallback: Click Opportunities tab
-        const oppTab = Array.from(document.querySelectorAll('a, span, div[role="button"]')).find(el => {
-          const t = (el.innerText || '').trim().toLowerCase();
-          return t === 'opportunities' || t === 'view all';
-        });
-        if (oppTab) {
-          console.log('[HireMind Campus] Clicking Opportunities navigation link...');
-          updateWidget('Opening Opportunities', 25, 'Opening Opportunities job feed...');
-          await HireMindCommon.humanClick(oppTab);
-          await HireMindCommon.delay(3000);
-        }
-      }
-    }
-
-    // 3. Now find the job card to open its detail drawer
-    const freshCards = Array.from(document.querySelectorAll('div[class*="card"], [class*="jobCard"], [class*="tuple"], article, div[class*="recommended"] div, .srp-jobtuple-wrapper')).filter(el => {
-      const r = el.getBoundingClientRect();
-      return r.width > 60 && r.height > 40;
-    });
-
-    if (freshCards.length > 0) {
-      let cardToClick = freshCards[0];
-      for (const card of freshCards) {
-        const txt = (card.innerText || '').toLowerCase();
-        if (targetTokens.some(tok => txt.includes(tok))) {
-          cardToClick = card;
-          break;
-        }
-      }
-
-      console.log(`[HireMind Campus] Opening job card: "${cardToClick.innerText.slice(0, 40)}"`);
-      updateWidget('Opening Details', 35, `Opening job card for ${job.title}...`);
-      await HireMindCommon.humanClick(cardToClick);
-      await HireMindCommon.delay(3000);
-    }
-
-    // 4. Poll for the opened Job Details drawer / Apply button
-    const applyStartTime = Date.now();
-    while (Date.now() - applyStartTime < 8000) {
-      if (isNaukriAlreadyApplied()) {
-        await finishAndExit(appId, job, updateWidget, 'Already applied');
-        return true;
-      }
-
-      const activeApplyBtn = findNaukriApplyButton();
-      if (activeApplyBtn) {
-        const btnLabel = (activeApplyBtn.innerText || '').trim();
-        console.log(`[HireMind Campus] Clicking Apply button: "${btnLabel}"`);
-        updateWidget('Clicking Apply', 45, `Clicking "${btnLabel}"...`);
-        await HireMindCommon.logStep(appId, 'Clicking Apply', 45, `Clicking "${btnLabel}" in Campus drawer...`);
-        await HireMindCommon.humanClick(activeApplyBtn);
-
-        // Mandatory 5-Second Wait
-        console.log('[HireMind Campus] Waiting 5 seconds for page response...');
-        updateWidget('Waiting (5s)', 55, 'Waiting 5 seconds for page response...');
-        await HireMindCommon.delay(5000);
-
-        if (isNaukriAlreadyApplied()) {
-          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
-          return true;
-        }
-
-        // Handle Chatbot Drawer
-        updateWidget('Screening Bot', 70, 'Handling screening questions...');
-        await handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget);
-
-        if (isNaukriAlreadyApplied()) {
-          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
-          return true;
-        }
-
-        await fillNaukriStandardForm(appId, candidate, resumeData, updateWidget);
-        await HireMindCommon.delay(2500);
-
-        if (isNaukriAlreadyApplied()) {
-          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
-          return true;
-        } else {
-          updateWidget('Applied Verified', 100, 'Application submitted! Returning to dashboard...');
-          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
-          return true;
-        }
-      }
-      await HireMindCommon.delay(500);
-    }
-  } catch (campusErr) {
-    console.warn('[HireMind Campus] Campus portal flow note:', campusErr);
-  }
-  return false;
-}
-
-  // Step 3: Dynamic SPA Page Scanner (polls for up to 15s for React/DOM elements to hydrate)
   updateWidget('Scanning Page', 30, 'Scanning job page for apply options and active sessions...');
   await HireMindCommon.logStep(appId, 'Scanning Page', 30, 'Scanning Naukri job page elements and checking session...');
 
@@ -428,7 +197,7 @@ async function handleCampusPortalFlow(appId, job, candidate, resumeData, updateW
 
   // Step 6: Handle Naukri Chatbot Questionnaire Drawer with AI Analysis
   updateWidget('Checking Questionnaire', 65, 'Scanning for screening questions / chatbot...');
-  const drawerHandled = await handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget);
+  await handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget);
 
   if (isNaukriAlreadyApplied()) {
     await finishAndExit(appId, job, updateWidget, 'Successfully applied');
@@ -448,6 +217,146 @@ async function handleCampusPortalFlow(appId, job, candidate, resumeData, updateW
     await HireMindCommon.logStep(appId, 'Human Review Required', 90, 'Screening answered. Please check open tab to confirm.');
     await HireMindCommon.updateStatus(appId, 'Review Required', 'Screening form filled; pending final confirmation.');
   }
+}
+
+/**
+ * Dedicated automation handler for Naukri Campus student portal
+ */
+async function handleCampusPortalFlow(appId, job, candidate, resumeData, updateWidget) {
+  try {
+    // 1. Check if an apply / interested button is already visible in an open drawer
+    let applyBtn = findNaukriApplyButton();
+    if (applyBtn) {
+      console.log('[HireMind Campus] Found visible Apply button directly in drawer.');
+      return false; // Let standard sequence click and process it
+    }
+
+    // 2. Scan visible job cards on the Campus homepage / feed
+    const cards = Array.from(document.querySelectorAll('div[class*="card"], [class*="jobCard"], [class*="tuple"], article, div[class*="recommended"] div')).filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.width > 60 && r.height > 40;
+    });
+
+    const targetTokens = ((job.title || '') + ' ' + (job.company || '')).toLowerCase().split(' ').filter(w => w.length > 2);
+    let matchedCard = null;
+
+    for (const card of cards) {
+      const txt = (card.innerText || '').toLowerCase();
+      if (targetTokens.some(tok => txt.includes(tok))) {
+        matchedCard = card;
+        break;
+      }
+    }
+
+    // If no exact match on homepage cards, use the Campus top search bar
+    if (!matchedCard) {
+      const searchInput = document.querySelector('input[placeholder*="Search jobs"], input[placeholder*="Search"], input[type="search"], .search-input, input[type="text"]');
+      if (searchInput) {
+        console.log(`[HireMind Campus] Typing "${job.title}" into Campus search bar...`);
+        updateWidget('Searching Campus', 25, `Searching for "${job.title}" in Campus jobs...`);
+        await HireMindCommon.logStep(appId, 'Searching Campus Jobs', 25, `Searching for '${job.title}' in Campus portal...`);
+
+        searchInput.focus();
+        await HireMindCommon.humanType(searchInput, job.title);
+        await HireMindCommon.delay(500);
+
+        // Click search icon or hit Enter
+        const searchBtn = document.querySelector('button[type="submit"], [class*="searchIcon"], [class*="search-icon"], [class*="searchBtn"], svg[class*="search"]')?.closest('button, span, div[role="button"]');
+        if (searchBtn && searchBtn !== searchInput) {
+          await HireMindCommon.humanClick(searchBtn);
+        } else {
+          searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+        }
+        await HireMindCommon.delay(3500);
+      } else {
+        // Fallback: Click Opportunities tab
+        const oppTab = Array.from(document.querySelectorAll('a, span, div[role="button"]')).find(el => {
+          const t = (el.innerText || '').trim().toLowerCase();
+          return t === 'opportunities' || t.includes('jobs') || t.includes('recommended');
+        });
+        if (oppTab) {
+          console.log('[HireMind Campus] Clicking Opportunities tab...');
+          await HireMindCommon.humanClick(oppTab);
+          await HireMindCommon.delay(3000);
+        }
+      }
+    }
+
+    // 3. Re-scan cards after search / navigation
+    const freshCards = Array.from(document.querySelectorAll('div[class*="card"], [class*="jobCard"], [class*="tuple"], article, [class*="tupleWrapper"]')).filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.width > 60 && r.height > 40;
+    });
+
+    if (freshCards.length > 0) {
+      let cardToClick = freshCards[0];
+      for (const card of freshCards) {
+        const txt = (card.innerText || '').toLowerCase();
+        if (targetTokens.some(tok => txt.includes(tok))) {
+          cardToClick = card;
+          break;
+        }
+      }
+
+      console.log(`[HireMind Campus] Opening job card: "${cardToClick.innerText.slice(0, 40)}"`);
+      updateWidget('Opening Details', 35, `Opening job card for ${job.title}...`);
+      await HireMindCommon.humanClick(cardToClick);
+      await HireMindCommon.delay(3000);
+    }
+
+    // 4. Poll for the opened Job Details drawer / Apply button
+    const applyStartTime = Date.now();
+    while (Date.now() - applyStartTime < 8000) {
+      if (isNaukriAlreadyApplied()) {
+        await finishAndExit(appId, job, updateWidget, 'Already applied');
+        return true;
+      }
+
+      const activeApplyBtn = findNaukriApplyButton();
+      if (activeApplyBtn) {
+        const btnLabel = (activeApplyBtn.innerText || '').trim();
+        console.log(`[HireMind Campus] Clicking Apply button: "${btnLabel}"`);
+        updateWidget('Clicking Apply', 45, `Clicking "${btnLabel}"...`);
+        await HireMindCommon.logStep(appId, 'Clicking Apply', 45, `Clicking "${btnLabel}" in Campus drawer...`);
+        await HireMindCommon.humanClick(activeApplyBtn);
+
+        // Mandatory 5-Second Wait
+        console.log('[HireMind Campus] Waiting 5 seconds for page response...');
+        updateWidget('Waiting (5s)', 55, 'Waiting 5 seconds for page response...');
+        await HireMindCommon.delay(5000);
+
+        if (isNaukriAlreadyApplied()) {
+          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
+          return true;
+        }
+
+        // Handle Chatbot Drawer
+        updateWidget('Screening Bot', 70, 'Handling screening questions...');
+        await handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget);
+
+        if (isNaukriAlreadyApplied()) {
+          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
+          return true;
+        }
+
+        await fillNaukriStandardForm(appId, candidate, resumeData, updateWidget);
+        await HireMindCommon.delay(2500);
+
+        if (isNaukriAlreadyApplied()) {
+          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
+          return true;
+        } else {
+          updateWidget('Applied Verified', 100, 'Application submitted! Returning to dashboard...');
+          await finishAndExit(appId, job, updateWidget, 'Successfully applied');
+          return true;
+        }
+      }
+      await HireMindCommon.delay(500);
+    }
+  } catch (campusErr) {
+    console.warn('[HireMind Campus] Campus portal flow note:', campusErr);
+  }
+  return false;
 }
 
 /**

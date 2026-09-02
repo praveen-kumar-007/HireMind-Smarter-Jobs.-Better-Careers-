@@ -19,6 +19,8 @@
   document.documentElement.setAttribute('data-hiremind-extension', 'true');
 
   function notifyReady() {
+    if (!isExtensionValid()) return;
+    document.documentElement.setAttribute('data-hiremind-extension', 'true');
     window.postMessage({
       type: 'HIREMIND_EXTENSION_READY',
       version: '1.0.0',
@@ -29,6 +31,15 @@
   notifyReady();
   window.addEventListener('DOMContentLoaded', notifyReady);
   window.addEventListener('load', notifyReady);
+  
+  // Periodic broadcast for SPAs
+  const readyInterval = setInterval(() => {
+    if (isExtensionValid()) {
+      document.documentElement.setAttribute('data-hiremind-extension', 'true');
+    } else {
+      clearInterval(readyInterval);
+    }
+  }, 2000);
 
   // Listen for actions dispatched by HireMind web UI
   window.addEventListener('message', (event) => {
@@ -37,9 +48,13 @@
     const { type, appId, job, token, serverUrl, user } = event.data;
 
     if (type === 'HIREMIND_PING') {
+      const valid = isExtensionValid();
+      if (valid) {
+        document.documentElement.setAttribute('data-hiremind-extension', 'true');
+      }
       window.postMessage({
         type: 'HIREMIND_PONG',
-        installed: isExtensionValid(),
+        installed: valid,
         version: '1.0.0'
       }, '*');
       return;
@@ -51,7 +66,7 @@
           type: 'HIREMIND_APPLY_ACK',
           appId,
           status: 'error',
-          error: 'Extension was reloaded. Please refresh this page (Press F5) to reconnect.'
+          error: 'Extension was reloaded or invalidated. Please refresh this page (F5) to reconnect.'
         }, '*');
       }
       return;
@@ -81,6 +96,7 @@
           serverUrl: serverUrl || window.location.origin
         }, (response) => {
           if (chrome.runtime?.lastError) {
+            console.error('[HireMind Bridge] Extension runtime error:', chrome.runtime.lastError);
             window.postMessage({
               type: 'HIREMIND_APPLY_ACK',
               appId,
@@ -97,6 +113,7 @@
           }, '*');
         });
       } catch (err) {
+        console.error('[HireMind Bridge] Error sending START_APPLY:', err);
         window.postMessage({
           type: 'HIREMIND_APPLY_ACK',
           appId,

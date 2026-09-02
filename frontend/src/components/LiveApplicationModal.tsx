@@ -101,40 +101,48 @@ export default function LiveApplicationModal({
 
     // 2. Real-Time SSE Stream with Token
     const token = localStorage.getItem('access_token') || ''
-    const url = `/api/applications/${appId}/events?token=${encodeURIComponent(token)}`
-    const eventSource = new EventSource(url)
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        
-        setEvents((prev) => {
-          if (prev.some(p => p.step === data.step && p.status_text === data.status_text)) return prev
-          return [...prev, { ...data, timestamp: now }]
-        })
-        if (data.progress) setProgress(data.progress)
-        if (data.status_text) setCurrentStep(data.status_text)
-        if (data.is_error) setHasError(true)
-
-        if (data.progress >= 100 || data.step === 'Completed' || data.step === 'Prepared' || data.is_error) {
-          setIsFinished(true)
-          clearInterval(pollInterval)
-          eventSource.close()
-        }
-      } catch (e) {
-        console.error("SSE parse error", e)
-      }
+    const baseURL = (api.defaults.baseURL || '/api').replace(/\/$/, '')
+    const url = `${baseURL}/applications/${appId}/events?token=${encodeURIComponent(token)}`
+    let eventSource: EventSource | null = null
+    try {
+      eventSource = new EventSource(url)
+    } catch (sseErr) {
+      console.warn("EventSource init failed, relying on polling fallback", sseErr)
     }
 
-    eventSource.onerror = () => {
-      eventSource.close()
+    if (eventSource) {
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          
+          setEvents((prev) => {
+            if (prev.some(p => p.step === data.step && p.status_text === data.status_text)) return prev
+            return [...prev, { ...data, timestamp: now }]
+          })
+          if (data.progress) setProgress(data.progress)
+          if (data.status_text) setCurrentStep(data.status_text)
+          if (data.is_error) setHasError(true)
+
+          if (data.progress >= 100 || data.step === 'Completed' || data.step === 'Prepared' || data.is_error) {
+            setIsFinished(true)
+            clearInterval(pollInterval)
+            eventSource?.close()
+          }
+        } catch (e) {
+          console.error("SSE parse error", e)
+        }
+      }
+
+      eventSource.onerror = () => {
+        eventSource?.close()
+      }
     }
 
     return () => {
       isSubscribed = false
       clearInterval(pollInterval)
-      eventSource.close()
+      eventSource?.close()
     }
   }, [isOpen, appId])
 

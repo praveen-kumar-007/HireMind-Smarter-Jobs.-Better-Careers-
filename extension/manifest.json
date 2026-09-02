@@ -10,6 +10,8 @@
     "scripting"
   ],
   "host_permissions": [
+    "<all_urls>",
+    "*://*/*",
     "*://*.naukri.com/*",
     "*://*.naukricampus.com/*",
     "*://naukricampus.com/*",
@@ -43,10 +45,8 @@
   "content_scripts": [
     {
       "matches": [
-        "*://localhost/*",
-        "*://127.0.0.1/*",
-        "*://*.vercel.app/*",
-        "*://hire-mind-praveen.vercel.app/*"
+        "<all_urls>",
+        "*://*/*"
       ],
       "js": ["content_scripts/hiremind_bridge.js"],
       "run_at": "document_start"
