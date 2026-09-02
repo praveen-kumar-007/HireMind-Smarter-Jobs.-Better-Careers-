@@ -668,7 +668,7 @@ async function selectOptionElement(targetEl) {
  * Reliably finds and clicks the Save / Next / Submit button in the questionnaire drawer
  */
 async function clickDrawerSaveButton() {
-  await HireMindCommon.delay(500);
+  await HireMindCommon.delay(350);
 
   // 1. Search for any visible button/link/div with Save / Next / Submit text
   const candidateElements = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a, input[type="submit"], input[type="button"], [class*="btn"], [class*="save"], [class*="submit"], [class*="action"], [class*="next"], [class*="primary"]')).filter(el => {
@@ -677,14 +677,10 @@ async function clickDrawerSaveButton() {
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
 
-    // Must be in the right half of the screen (inside drawer) or bottom area
-    if (r.left < window.innerWidth * 0.35 && r.top < window.innerHeight * 0.7) return false;
+    // Ignore background Apply button on the left
+    if (r.left < window.innerWidth * 0.35 && r.top < window.innerHeight * 0.6) return false;
 
     const txt = (el.innerText || el.textContent || el.value || '').trim().toLowerCase();
-    
-    // Ignore background Apply button on left
-    if (txt === 'apply' && r.left < window.innerWidth * 0.4) return false;
-
     return (
       txt === 'save' ||
       txt === 'submit' ||
@@ -705,7 +701,7 @@ async function clickDrawerSaveButton() {
 
   let targetBtn = null;
   if (candidateElements.length > 0) {
-    // Pick the lowest / bottom-most action button
+    // Pick the lowest / bottom-most action button in viewport (inside active drawer)
     candidateElements.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
     targetBtn = candidateElements[0];
   } else {
@@ -724,11 +720,11 @@ async function clickDrawerSaveButton() {
     const label = (targetBtn.innerText || targetBtn.value || 'Save').trim();
     console.log(`[HireMind Naukri] Clicking Save/Submit button: "${label}"`, targetBtn);
     targetBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await HireMindCommon.delay(150);
+    await HireMindCommon.delay(100);
 
-    // If button has disabled attribute, wait for React state to sync
+    // If button has disabled attribute, wait and clear it
     if (targetBtn.disabled) {
-      await HireMindCommon.delay(600);
+      await HireMindCommon.delay(400);
       targetBtn.removeAttribute('disabled');
       targetBtn.disabled = false;
     }
@@ -745,7 +741,7 @@ async function clickDrawerSaveButton() {
       innerBtn.click();
     }
 
-    await HireMindCommon.delay(1800);
+    await HireMindCommon.delay(1500);
     return true;
   }
 
@@ -768,8 +764,6 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
     }
 
     await HireMindCommon.delay(800);
-
-    let actedThisTurn = false;
 
     // 1. Extract active question text from drawer
     const questionNodes = Array.from(document.querySelectorAll('p, div, span, h2, h3, h4, h5, label')).filter(el => {
@@ -794,23 +788,37 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       console.log(`[HireMind Naukri] Selecting resolved option: "${intent.value}"`);
       updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting "${intent.value}"...`);
       await selectOptionElement(targetOptionEl);
-      actedThisTurn = true;
-      await HireMindCommon.delay(600);
-    } else {
-      // Fallback: Check for standard option cards
-      const otherOptions = findAllChatbotOptions(document);
-      if (otherOptions.length > 0) {
-        const fallbackOpt = otherOptions[0];
-        const optTxt = (fallbackOpt.innerText || fallbackOpt.textContent || 'Option').trim();
-        console.log(`[HireMind Naukri] Fallback selecting option card: "${optTxt}"`);
-        updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting: "${optTxt}"`);
-        await selectOptionElement(fallbackOpt);
-        actedThisTurn = true;
-        await HireMindCommon.delay(600);
-      }
+      await HireMindCommon.delay(500);
+
+      // IMMEDIATELY click Save after selecting option!
+      updateWidget('Saving & Proceeding', Math.min(72 + turn * 2, 95), 'Clicking Save button...');
+      await clickDrawerSaveButton();
+      await HireMindCommon.delay(1200);
+
+      if (isNaukriAlreadyApplied()) return true;
+      continue;
     }
 
-    // 4. Handle HTML <select> dropdowns if any
+    // 4. Fallback option selection if intent didn't match exact text
+    const otherOptions = findAllChatbotOptions(document);
+    if (otherOptions.length > 0) {
+      const fallbackOpt = otherOptions[0];
+      const optTxt = (fallbackOpt.innerText || fallbackOpt.textContent || 'Option').trim();
+      console.log(`[HireMind Naukri] Fallback selecting option card: "${optTxt}"`);
+      updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting: "${optTxt}"`);
+      await selectOptionElement(fallbackOpt);
+      await HireMindCommon.delay(500);
+
+      // IMMEDIATELY click Save after selecting option!
+      updateWidget('Saving & Proceeding', Math.min(72 + turn * 2, 95), 'Clicking Save button...');
+      await clickDrawerSaveButton();
+      await HireMindCommon.delay(1200);
+
+      if (isNaukriAlreadyApplied()) return true;
+      continue;
+    }
+
+    // 5. Handle HTML <select> dropdowns if any
     const selectElements = Array.from(document.querySelectorAll('select')).filter(el => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && !el.disabled;
@@ -821,11 +829,10 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
         selectEl.value = opts[1].value;
         selectEl.dispatchEvent(new Event('change', { bubbles: true }));
         selectEl.dispatchEvent(new Event('input', { bubbles: true }));
-        actedThisTurn = true;
       }
     }
 
-    // 5. Handle Text / Number / Date / Textarea input fields
+    // 6. Handle Text / Number / Date / Textarea input fields
     const textInputs = Array.from(document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], input:not([type]), textarea, div[contenteditable="true"]')).filter(el => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && r.left > window.innerWidth * 0.4 && (!el.value || el.value.trim().length === 0);
@@ -852,33 +859,26 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       } else if (inputCtx.includes('location') || inputCtx.includes('city')) {
         answer = candidate.location || 'Bangalore, India';
       } else {
-        answer = await HireMindCommon.askAI(appId, activeQuestion, job.title, job.description);
-        if (!answer || answer.length < 2) {
-          answer = 'Yes, I have relevant hands-on skills and domain experience for this role.';
-        }
+        answer = 'Yes, I have relevant hands-on skills and domain experience for this role.';
       }
 
       console.log(`[HireMind Naukri] Typing answer: "${answer}"`);
       updateWidget('Filling Answer', Math.min(72 + turn * 2, 94), `Answer: "${answer}"`);
       await HireMindCommon.humanType(textInput, answer);
-      await HireMindCommon.delay(400);
-      actedThisTurn = true;
+      await HireMindCommon.delay(300);
     }
 
-    // 6. CRITICAL: Automatically Locate and Click the "Save" / "Submit" / "Next" Button
-    updateWidget('Saving & Proceeding', Math.min(75 + turn * 2, 95), 'Clicking Save/Next button...');
+    // 7. Click Save button after answering input
+    updateWidget('Saving & Proceeding', Math.min(75 + turn * 2, 95), 'Clicking Save button...');
     const saveClicked = await clickDrawerSaveButton();
-    if (saveClicked) {
-      actedThisTurn = true;
-    }
 
-    // 7. Check if done after saving
+    // 8. Check if done after saving
     if (isNaukriAlreadyApplied()) {
       return true;
     }
 
-    // If no action and no save button, wait and check if more questions exist
-    if (!actedThisTurn && !saveClicked) {
+    // If no save button was found, check if more questions exist
+    if (!saveClicked) {
       await HireMindCommon.delay(1500);
       if (isNaukriAlreadyApplied()) return true;
       const hasMoreSave = await clickDrawerSaveButton();
