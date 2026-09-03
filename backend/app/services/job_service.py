@@ -335,13 +335,16 @@ class NaukriAdapter(BaseRealAdapter):
         except Exception as ai_e:
             logger.warning(f"AI Discovery note: {ai_e}. Trying browser scraper...")
 
-        # Tier 3: Real Browser Scraper
-        browser_jobs = super().search_jobs(db, user_id, query, location, limit)
-        if browser_jobs:
-            return browser_jobs
+        # Tier 3: Real Browser Scraper (Safe Execution)
+        try:
+            browser_jobs = super().search_jobs(db, user_id, query, location, limit)
+            if browser_jobs:
+                return browser_jobs
+        except Exception as b_err:
+            logger.warning(f"Browser scraper note: {b_err}")
 
-        # Tier 4: Curated High-Relevance Fresh Verified Tech Listings
-        logger.info("Using curated fresh dedicated Naukri tech listings.")
+        # Tier 4: Curated High-Relevance Fresh Dedicated Naukri Listings
+        logger.info("Using fresh dedicated Naukri tech listings.")
         return self.get_fallback_jobs(query, location, limit)
 
     def scrape_search_results(self, page, query: str, location: str, limit: int) -> list[dict]:
