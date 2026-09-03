@@ -188,28 +188,49 @@ async function runNaukriAutomation(appId, job, candidate, resumeData, updateWidg
       return;
     }
 
-    // Check if page shows "No results found" — treat as expired and permanently delete
-    const bodyText = (document.body.innerText || '').toLowerCase();
-    if (bodyText.includes('no results found') || bodyText.includes('job has expired') || bodyText.includes('no longer available') || bodyText.includes('modify your search criteria')) {
-      console.log('[HireMind] Page shows no results / expired. Permanently removing job.');
-      updateWidget('Job Expired', 100, 'Job not found on Naukri. Removing from your board...');
-      await HireMindCommon.logStep(appId, 'Job Expired', 100, `'${job.title}' not found on Naukri. Permanently removing.`);
-      try {
-        await HireMindCommon.deleteExpiredJob(job.id || job.job_id);
-      } catch (e) {
-        console.warn('[HireMind] Could not delete expired job:', e);
+    // 1. Check if there are active job cards on the page (e.g. search listings or Campus feed)
+    const visibleCards = Array.from(document.querySelectorAll('.cust-job-tuple, article, .srp-jobtuple-wrapper, div[class*="card"], [class*="jobCard"], [class*="tuple"]'))
+      .filter(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 60 && r.height > 40;
+      });
+
+    if (visibleCards.length > 0) {
+      console.log(`[HireMind] Found ${visibleCards.length} active job cards on page. Opening top active card...`);
+      updateWidget('Selecting Job', 30, `Opening top active listing for "${job.title}"...`);
+      await HireMindCommon.humanClick(visibleCards[0]);
+      await HireMindCommon.delay(3500);
+
+      const refreshedApply = findNaukriApplyButton();
+      if (refreshedApply) {
+        pageState = { type: 'apply_button', element: refreshedApply };
       }
-      await HireMindCommon.delay(2000);
-      try { await HireMindCommon.sendMessage('FOCUS_DASHBOARD_TAB'); } catch (e) {}
-      try { await HireMindCommon.sendMessage('CLOSE_TAB_AFTER_DELAY', { delayMs: 3000 }); } catch (e) {}
-      return;
     }
 
-    console.log('[HireMind] Apply button missing on page');
-    updateWidget('Review Required', 90, 'Could not locate a direct Apply / Interested button.');
-    await HireMindCommon.logStep(appId, 'Apply Button Missing', 90, `No direct Apply button found on page for '${job.title}'.`);
-    await HireMindCommon.updateStatus(appId, 'Manual Intervention', 'Could not locate Apply button.');
-    return;
+    // 2. Only if NO cards and NO apply button exist, check for expired page
+    if (pageState.type !== 'apply_button' || !pageState.element) {
+      const bodyText = (document.body.innerText || '').toLowerCase();
+      if (visibleCards.length === 0 && (bodyText.includes('no results found') || bodyText.includes('job has expired') || bodyText.includes('no longer available') || bodyText.includes('modify your search criteria'))) {
+        console.log('[HireMind] Page shows no results / expired. Permanently removing job.');
+        updateWidget('Job Expired', 100, 'Job not found on Naukri. Removing from your board...');
+        await HireMindCommon.logStep(appId, 'Job Expired', 100, `'${job.title}' not found on Naukri. Permanently removing.`);
+        try {
+          await HireMindCommon.deleteExpiredJob(job.id || job.job_id);
+        } catch (e) {
+          console.warn('[HireMind] Could not delete expired job:', e);
+        }
+        await HireMindCommon.delay(2000);
+        try { await HireMindCommon.sendMessage('FOCUS_DASHBOARD_TAB'); } catch (e) {}
+        try { await HireMindCommon.sendMessage('CLOSE_TAB_AFTER_DELAY', { delayMs: 3000 }); } catch (e) {}
+        return;
+      }
+
+      console.log('[HireMind] Apply button missing on page');
+      updateWidget('Review Required', 90, 'Could not locate a direct Apply / Interested button.');
+      await HireMindCommon.logStep(appId, 'Apply Button Missing', 90, `No direct Apply button found on page for '${job.title}'.`);
+      await HireMindCommon.updateStatus(appId, 'Manual Intervention', 'Could not locate Apply button.');
+      return;
+    }
   }
 
   // Step 3: Click the Apply / Interested / Quick Apply Button

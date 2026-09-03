@@ -258,14 +258,6 @@ def get_jobs(
     unique_jobs = []
     import re
     for job in all_jobs:
-        # Normalize legacy search URLs to direct job-listings URLs
-        if job.source == 'Naukri' and job.url and ('-jobs-in-' in job.url or '?k=' in job.url):
-            clean_t = re.sub(r'[^a-zA-Z0-9\s-]', '', job.title or '').strip().lower().replace(' ', '-')
-            clean_c = re.sub(r'[^a-zA-Z0-9\s-]', '', job.company or '').strip().lower().replace(' ', '-')
-            clean_l = re.sub(r'[^a-zA-Z0-9\s-]', '', job.location or 'bengaluru').strip().lower().replace(' ', '-')
-            job_num = f"01092601{job.id:04d}" if job.id else "010926010537"
-            job.url = f"https://www.naukri.com/job-listings-{clean_t}-{clean_c}-{clean_l}-0-to-2-years-{job_num}"
-
         clean_title = (job.title or "").strip().lower()
         clean_company = (job.company or "").strip().lower()
         clean_url = (job.url or "").split("?")[0].rstrip("/").lower()

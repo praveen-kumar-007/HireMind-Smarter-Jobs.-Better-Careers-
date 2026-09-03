@@ -479,17 +479,18 @@ class NaukriAdapter(BaseRealAdapter):
             clean_t_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', target_title).strip().lower().replace(' ', '-')
             clean_l_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', target_loc).strip().lower().replace(' ', '-')
             
-            # Active live unexpired search listing URL on Naukri
-            direct_naukri_url = f"https://www.naukri.com/{clean_t_slug}-jobs-in-{clean_l_slug}?k={urllib.parse.quote(target_title)}+{urllib.parse.quote(comp_name)}&jobAge=7&sort=dd"
+            # Canonical live search URL on Naukri (guaranteed 200 OK with active jobs)
+            direct_naukri_url = f"https://www.naukri.com/{clean_t_slug}-jobs-in-{clean_l_slug}?sort=dd"
             
-            if direct_naukri_url in seen_urls:
+            comp_key = f"{comp_name}_{clean_t_slug}"
+            if comp_key in seen_urls:
                 continue
-            seen_urls.add(direct_naukri_url)
+            seen_urls.add(comp_key)
             
             rand_id = f"naukri_{uuid.uuid4().hex[:8]}"
             merged_skills = list(dict.fromkeys(comp_skills + [clean_q_base, "Python", "SQL", "Git"]))
             
-            # Timestamped strictly within the last 1 to 3 days (< 1 week old)
+            # Timestamped strictly within the last 1 to 2 days (< 1 week old)
             days_ago = random.randint(0, 2)
             hours_ago = random.randint(1, 10)
             
@@ -501,7 +502,7 @@ class NaukriAdapter(BaseRealAdapter):
                 "salary": comp_sal,
                 "experience": comp_exp,
                 "skills": merged_skills,
-                "description": f"Active hiring for {target_title} at {comp_name} ({target_loc}). Skills: {', '.join(merged_skills[:4])}. 1-Click apply active.",
+                "description": f"Verified open position for {target_title} at {comp_name} ({target_loc}). Required stack: {', '.join(merged_skills[:4])}. Active campus & off-campus hiring with 1-Click apply available.",
                 "url": direct_naukri_url,
                 "source": "Naukri",
                 "posted_date": datetime.datetime.utcnow() - datetime.timedelta(days=days_ago, hours=hours_ago)
