@@ -1,6 +1,8 @@
+from __future__ import annotations
 import datetime
 import logging
 from abc import ABC, abstractmethod
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.models.job import Job, JobSkill
 from app.models.user import UserPlatformCredential, Profile
