@@ -36,13 +36,13 @@ class Settings(BaseSettings):
     GROQ_API_KEY_FALLBACK: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
     GROQ_PRIMARY_MODEL: str = "llama-3.3-70b-versatile"
-    GROQ_FAST_MODEL: str = "llama-3.1-8b-instant"
+    GROQ_FAST_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_TIMEOUT: int = 15
 
     # Google Gemini (High Quota Fallback)
     GEMINI_API_KEY: str = ""
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
-    GEMINI_PRIMARY_MODEL: str = "gemini-2.0-flash"
+    GEMINI_PRIMARY_MODEL: str = "gemini-2.5-flash"
     GEMINI_TIMEOUT: int = 20
 
     # NVIDIA NIM

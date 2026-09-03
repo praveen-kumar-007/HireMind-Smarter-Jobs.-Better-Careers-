@@ -509,48 +509,37 @@ class AIService:
         temperature: float = 0.6,
         timeout_override: Optional[int] = None
     ) -> str:
-        """Query Groq with Primary Key, failing over to Secondary Groq Key if rate-limited."""
+        """Query Groq with Primary Key, auto-failing over models and keys."""
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
         timeout = timeout_override or self.groq_timeout
-        primary_model = model_override or (self.groq_fast_model if "extract" in task_type or "simple" in task_type else self.groq_primary_model)
+        primary_model = model_override or self.groq_primary_model
+        
+        # Valid active Groq model candidates
+        model_candidates = [primary_model, "llama-3.3-70b-versatile", "llama3-70b-8192", "llama3-8b-8192", "gemma2-9b-it"]
+        model_candidates = list(dict.fromkeys([m for m in model_candidates if m]))
 
-        # Attempt 1: Primary Groq Key
-        if self.groq_primary_key:
-            try:
-                res = self._call_openai_compatible_api(
-                    base_url=self.groq_base_url,
-                    api_key=self.groq_primary_key,
-                    model=primary_model,
-                    messages=messages,
-                    temperature=temperature,
-                    timeout=timeout
-                )
-                if res:
-                    return res
-            except Exception as e:
-                logger.warning(f"Groq Primary Key failed ({primary_model}): {e}. Trying fallback key...")
+        keys_to_try = [k for k in [self.groq_primary_key, self.groq_fallback_key] if k]
+        for key in keys_to_try:
+            for model in model_candidates:
+                try:
+                    res = self._call_openai_compatible_api(
+                        base_url=self.groq_base_url,
+                        api_key=key,
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        timeout=timeout
+                    )
+                    if res:
+                        return res
+                except Exception as e:
+                    logger.warning(f"Groq call failed with model '{model}': {e}. Trying next candidate...")
 
-        # Attempt 2: Fallback Groq Key
-        if self.groq_fallback_key:
-            try:
-                res = self._call_openai_compatible_api(
-                    base_url=self.groq_base_url,
-                    api_key=self.groq_fallback_key,
-                    model=self.groq_fast_model,
-                    messages=messages,
-                    temperature=temperature,
-                    timeout=timeout
-                )
-                if res:
-                    return res
-            except Exception as e:
-                logger.warning(f"Groq Fallback Key failed: {e}")
-
-        raise ConnectionError("Groq keys failed or unavailable.")
+        raise ConnectionError("Groq keys or models failed or unavailable.")
 
     def ask_gemini(
         self,
@@ -561,13 +550,14 @@ class AIService:
         temperature: float = 0.6,
         timeout_override: Optional[int] = None
     ) -> str:
-        """Query Google Gemini via native REST endpoint."""
+        """Query Google Gemini with automatic multi-version fallback."""
         if not self.gemini_key:
             raise ConnectionError("Gemini API key not configured.")
 
         timeout = timeout_override or self.gemini_timeout
-        model = model_override or self.gemini_primary_model
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
+        primary_model = model_override or self.gemini_primary_model
+        gemini_candidates = [primary_model, "gemini-2.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"]
+        gemini_candidates = list(dict.fromkeys([m for m in gemini_candidates if m]))
 
         contents = []
         if system_prompt:
@@ -583,19 +573,23 @@ class AIService:
             }
         }
 
-        response = requests.post(url, json=payload, timeout=timeout)
-        if response.status_code == 200:
-            data = response.json()
-            candidates = data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if parts:
-                    return parts[0].get("text", "")
-        else:
-            logger.warning(f"Gemini API error ({response.status_code}): {response.text[:200]}")
-            raise RuntimeError(f"Gemini API returned HTTP {response.status_code}: {response.text[:200]}")
+        for model in gemini_candidates:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
+            try:
+                response = requests.post(url, json=payload, timeout=timeout)
+                if response.status_code == 200:
+                    data = response.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            return parts[0].get("text", "")
+                else:
+                    logger.warning(f"Gemini API model '{model}' status ({response.status_code}): {response.text[:150]}")
+            except Exception as e:
+                logger.warning(f"Gemini candidate '{model}' failed: {e}")
 
-        raise ConnectionError("Gemini returned empty response.")
+        raise ConnectionError("All Gemini model candidates failed.")
 
     def ask_nvidia(
         self,
