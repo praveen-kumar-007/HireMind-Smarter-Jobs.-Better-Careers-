@@ -331,38 +331,18 @@ async function handleCampusPortalFlow(appId, job, candidate, resumeData, updateW
       }
     }
 
-    // If no exact match on homepage cards, use the Campus top search bar
+    // If on homepage feed and no card matched directly, navigate directly to live Naukri SRP search
     if (!matchedCard) {
-      const searchInput = document.querySelector('input[placeholder*="Search jobs"], input[placeholder*="Search"], input[type="search"], .search-input, input[type="text"]');
-      if (searchInput) {
-        console.log(`[HireMind Campus] Typing "${job.title}" into Campus search bar...`);
-        updateWidget('Searching Campus', 25, `Searching for "${job.title}" in Campus jobs...`);
-        await HireMindCommon.logStep(appId, 'Searching Campus Jobs', 25, `Searching for '${job.title}' in Campus portal...`);
+      const cleanTitle = (job.title || 'software-developer').toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+      const cleanLoc = (job.location || 'india').toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+      const directSearchUrl = `https://www.naukri.com/${cleanTitle}-jobs-in-${cleanLoc || 'india'}?k=${encodeURIComponent(job.title + (job.company ? ' ' + job.company : ''))}&hiremind_app_id=${appId}`;
 
-        searchInput.focus();
-        await HireMindCommon.humanType(searchInput, job.title);
-        await HireMindCommon.delay(500);
-
-        // Click search icon or hit Enter
-        const searchBtn = document.querySelector('button[type="submit"], [class*="searchIcon"], [class*="search-icon"], [class*="searchBtn"], svg[class*="search"]')?.closest('button, span, div[role="button"]');
-        if (searchBtn && searchBtn !== searchInput) {
-          await HireMindCommon.humanClick(searchBtn);
-        } else {
-          searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-        }
-        await HireMindCommon.delay(3500);
-      } else {
-        // Fallback: Click Opportunities tab
-        const oppTab = Array.from(document.querySelectorAll('a, span, div[role="button"]')).find(el => {
-          const t = (el.innerText || '').trim().toLowerCase();
-          return t === 'opportunities' || t.includes('jobs') || t.includes('recommended');
-        });
-        if (oppTab) {
-          console.log('[HireMind Campus] Clicking Opportunities tab...');
-          await HireMindCommon.humanClick(oppTab);
-          await HireMindCommon.delay(3000);
-        }
-      }
+      console.log(`[HireMind Campus] Redirecting from homepage to direct search listing: ${directSearchUrl}`);
+      updateWidget('Navigating to Job', 25, `Opening direct listings for "${job.title}"...`);
+      await HireMindCommon.logStep(appId, 'Navigating to Direct Job', 25, `Redirecting from homepage to exact listings for '${job.title}'...`);
+      
+      window.location.href = directSearchUrl;
+      return true;
     }
 
     // 3. Re-scan cards after search / navigation
