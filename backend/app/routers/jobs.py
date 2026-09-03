@@ -33,7 +33,7 @@ def get_jobs(
     import binascii
     import datetime
     from app.models.application import Application
-    ALLOWED_SOURCES = ["Naukri"]
+    ALLOWED_SOURCES = ["Naukri", "Company Website", "LinkedIn", "Indeed", "Glassdoor", "WorkIndia", "Direct Careers"]
 
     # 1. Trigger live crawler scan if requested
     if trigger_scan:
@@ -60,7 +60,7 @@ def get_jobs(
         
         # Parallelize keyword discovery for maximum execution speed
         transient_jobs = []
-        for kw in scan_keywords[:1]:
+        for kw in scan_keywords[:2]:
             try:
                 res = job_discovery_service.discover_and_save_jobs(
                     db, query=kw, location=loc, user_id=current_user.id, save_to_db=False
@@ -134,21 +134,20 @@ def get_jobs(
         
         db.commit()
 
-        # Refresh instances in the main session
-        for j in db_jobs:
-            try:
-                db.refresh(j)
-            except Exception:
-                pass
-                
-        return db_jobs[:100]
+        # Query all active non-dismissed jobs from DB to return complete list
+        dismissed_ids = [a.job_id for a in db.query(Application).filter(Application.user_id == current_user.id, Application.status == "Dismissed").all() if a.job_id]
+        active_db_q = db.query(Job).options(joinedload(Job.skills), joinedload(Job.job_matches))
+        if dismissed_ids:
+            active_db_q = active_db_q.filter(~Job.id.in_(dismissed_ids))
+        all_active = active_db_q.order_by(Job.created_at.desc()).limit(150).all()
+        return all_active if all_active else db_jobs[:100]
 
     # 2. If trigger_scan is False and no jobs exist in DB, return transient fallback jobs
     job_count = db.query(Job).count()
     if job_count == 0:
         transient_fallbacks = []
         for prov_key, adapter in job_discovery_service.adapters.items():
-            for fb in adapter.get_fallback_jobs("Software Engineer", "Bangalore, India", limit=4):
+            for fb in adapter.get_fallback_jobs("Software Engineer", "Bangalore, India", limit=12):
                 transient_id = binascii.crc32(fb["job_id"].encode('utf-8')) & 0x7fffffff
                 transient_fallbacks.append({
                     "id": transient_id,

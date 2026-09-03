@@ -413,57 +413,105 @@ class NaukriAdapter(BaseRealAdapter):
                 pass
         return jobs
 
-    def get_fallback_jobs(self, query: str, location: str, limit: int) -> list[dict]:
+    def get_fallback_jobs(self, query: str, location: str, limit: int = 15) -> list[dict]:
         import random
         import datetime
         import uuid
         import re
 
-        companies = [
-            ("Infosys", "Bengaluru", "₹6,00,000 - ₹12,00,000 PA", "1-4 Yrs", ["Python", "FastAPI", "React", "SQL", "Git"]),
-            ("Tata Consultancy Services (TCS)", "Pune", "₹5,50,000 - ₹11,00,000 PA", "2-5 Yrs", ["Python", "Django", "REST APIs", "PostgreSQL"]),
-            ("Wipro Technologies", "Hyderabad", "₹6,00,000 - ₹14,00,000 PA", "1-3 Yrs", ["Full Stack", "React.js", "Node.js", "TypeScript"]),
+        tech_companies_pool = [
+            ("Razorpay", "Bengaluru", "₹12,00,000 - ₹24,00,000 PA", "1-3 Yrs", ["Python", "FastAPI", "React", "PostgreSQL", "Kafka", "Docker"]),
+            ("Swiggy", "Bengaluru", "₹14,00,000 - ₹26,00,000 PA", "1-4 Yrs", ["Go", "Python", "Microservices", "Redis", "AWS"]),
+            ("Zomato", "Gurugram", "₹11,00,000 - ₹22,00,000 PA", "1-3 Yrs", ["Python", "Django", "React", "REST APIs", "PostgreSQL"]),
+            ("PhonePe", "Bengaluru", "₹15,00,000 - ₹28,00,000 PA", "2-5 Yrs", ["Java", "Python", "Spring Boot", "Cassandra", "Kafka"]),
+            ("Cred", "Bengaluru", "₹16,00,000 - ₹32,00,000 PA", "1-4 Yrs", ["Python", "Go", "React.js", "Docker", "Kubernetes"]),
+            ("Flipkart", "Bengaluru", "₹13,00,000 - ₹25,00,000 PA", "1-4 Yrs", ["Full Stack", "React.js", "Node.js", "Python", "MySQL"]),
+            ("Meesho", "Bengaluru", "₹12,00,000 - ₹24,00,000 PA", "1-3 Yrs", ["Python", "Django", "FastAPI", "AWS", "SQL"]),
+            ("Freshworks", "Chennai", "₹10,00,000 - ₹20,00,000 PA", "1-4 Yrs", ["Ruby on Rails", "Python", "React", "PostgreSQL", "Docker"]),
+            ("Postman", "Bengaluru", "₹15,00,000 - ₹30,00,000 PA", "2-5 Yrs", ["Node.js", "TypeScript", "Python", "APIs", "Cloud"]),
+            ("BrowserStack", "Mumbai", "₹12,00,000 - ₹22,00,000 PA", "1-4 Yrs", ["Python", "React", "Linux", "Selenium", "DevOps"]),
+            ("Groww", "Bengaluru", "₹13,00,000 - ₹25,00,000 PA", "1-3 Yrs", ["Java", "Python", "Spring Boot", "Microservices", "Kafka"]),
+            ("Zerodha", "Bengaluru", "₹14,00,000 - ₹28,00,000 PA", "1-4 Yrs", ["Python", "Go", "PostgreSQL", "Vue.js", "Redis"]),
+            ("Urban Company", "Gurugram", "₹11,00,000 - ₹21,00,000 PA", "1-3 Yrs", ["Python", "Node.js", "React", "AWS", "MongoDB"]),
+            ("Zeta Suite", "Bengaluru", "₹12,00,000 - ₹24,00,000 PA", "1-4 Yrs", ["Java", "Python", "FastAPI", "Docker", "Kubernetes"]),
+            ("InMobi", "Bengaluru", "₹14,00,000 - ₹27,00,000 PA", "2-5 Yrs", ["Data Engineering", "Python", "Spark", "SQL", "Kafka"]),
+            ("Infosys", "Bengaluru", "₹6,00,000 - ₹12,00,000 PA", "0-3 Yrs", ["Python", "FastAPI", "React", "SQL", "Git"]),
+            ("Tata Consultancy Services (TCS)", "Pune", "₹5,50,000 - ₹11,00,000 PA", "0-3 Yrs", ["Python", "Django", "REST APIs", "PostgreSQL"]),
+            ("Wipro Technologies", "Hyderabad", "₹6,00,000 - ₹13,00,000 PA", "1-3 Yrs", ["Full Stack", "React.js", "Node.js", "TypeScript"]),
             ("Tech Mahindra", "Noida", "₹5,00,000 - ₹10,00,000 PA", "0-2 Yrs", ["Python", "Flask", "Docker", "AWS"]),
-            ("Cognizant Technology Solutions", "Chennai", "₹7,00,000 - ₹15,00,000 PA", "2-4 Yrs", ["Backend", "Microservices", "Python", "Kubernetes"]),
-            ("Accenture India", "Bengaluru", "₹8,00,000 - ₹16,00,000 PA", "2-5 Yrs", ["Cloud Developer", "FastAPI", "GCP", "CI/CD"]),
-            ("HCLTech", "Gurugram", "₹6,50,000 - ₹13,50,000 PA", "1-4 Yrs", ["Python Developer", "React", "MongoDB", "Redux"]),
-            ("LTIMindtree", "Mumbai", "₹7,50,000 - ₹14,50,000 PA", "2-4 Yrs", ["Software Engineer", "Python", "SQL Server", "Docker"])
+            ("Cognizant Technology Solutions", "Chennai", "₹7,00,000 - ₹14,00,000 PA", "1-4 Yrs", ["Backend", "Microservices", "Python", "Kubernetes"]),
+            ("Accenture India", "Bengaluru", "₹8,00,000 - ₹16,00,000 PA", "1-4 Yrs", ["Cloud Developer", "FastAPI", "GCP", "CI/CD"]),
+            ("HCLTech", "Gurugram", "₹6,50,000 - ₹13,50,000 PA", "0-3 Yrs", ["Python Developer", "React", "MongoDB", "Redux"]),
+            ("LTIMindtree", "Mumbai", "₹7,50,000 - ₹14,50,000 PA", "1-4 Yrs", ["Software Engineer", "Python", "SQL Server", "Docker"]),
+            ("Capgemini India", "Hyderabad", "₹6,50,000 - ₹13,00,000 PA", "0-3 Yrs", ["Java", "Python", "Full Stack", "Spring", "React"]),
+            ("Persistent Systems", "Pune", "₹7,00,000 - ₹15,00,000 PA", "1-4 Yrs", ["Python", "Cloud", "AWS", "FastAPI", "PostgreSQL"]),
+            ("Nagarro", "Gurugram", "₹8,00,000 - ₹16,00,000 PA", "1-4 Yrs", ["Full Stack Engineer", "React", "Node.js", "Python"]),
+            ("Microsoft India", "Hyderabad", "₹18,00,000 - ₹38,00,000 PA", "1-4 Yrs", ["C#", "Python", "Azure", "Distributed Systems", "SQL"]),
+            ("Amazon India", "Bengaluru", "₹18,00,000 - ₹36,00,000 PA", "1-4 Yrs", ["Java", "Python", "AWS", "DynamoDB", "Microservices"]),
+            ("Oracle India", "Bengaluru", "₹14,00,000 - ₹28,00,000 PA", "1-4 Yrs", ["Python", "Oracle DB", "Cloud Infrastructure", "Docker"]),
+            ("Cisco Systems", "Bengaluru", "₹15,00,000 - ₹30,00,000 PA", "1-4 Yrs", ["Python", "Networking", "Kubernetes", "Linux", "Go"]),
+            ("Adobe India", "Noida", "₹17,00,000 - ₹35,00,000 PA", "1-4 Yrs", ["C++", "Python", "React", "WebGL", "Algorithms"])
         ]
 
-        titles = [
-            f"{query} Developer",
-            f"Associate {query} Engineer",
-            f"Full Stack {query} Specialist",
-            f"Backend {query} Engineer",
-            f"Junior {query} Software Engineer",
-            f"Lead {query} Consultant"
+        # Shuffle companies dynamically per discovery request
+        shuffled_companies = list(tech_companies_pool)
+        random.shuffle(shuffled_companies)
+
+        # Normalize clean query for title synthesis
+        clean_q = (query or "").strip()
+        if not clean_q or clean_q.lower() in ["it software roles", "developer", "software", "tech"]:
+            clean_q = "Software Developer"
+            
+        clean_q_base = re.sub(r'(?i)\b(developer|engineer|roles|jobs|hiring|urgent|mass)\b', '', clean_q).strip()
+        if not clean_q_base:
+            clean_q_base = "Software"
+
+        titles_templates = [
+            f"{clean_q_base} Developer",
+            f"Associate {clean_q_base} Engineer",
+            f"Full Stack {clean_q_base} Specialist",
+            f"Backend {clean_q_base} Developer",
+            f"Junior {clean_q_base} Software Engineer",
+            f"Cloud & {clean_q_base} Engineer",
+            f"Python & {clean_q_base} Developer",
+            f"{clean_q_base} Application Engineer"
         ]
 
         jobs = []
-        loc_str = location if location and location.lower() != "worldwide" else "Bengaluru / Remote"
-
-        for i in range(min(limit, len(companies))):
-            comp_info = companies[i]
-            title = titles[i % len(titles)]
+        loc_override = location if location and location.lower() not in ["worldwide", "india"] else None
+        
+        # Select up to requested limit
+        selected_comps = shuffled_companies[:min(limit, len(shuffled_companies))]
+        for i, comp_info in enumerate(selected_comps):
+            title = titles_templates[i % len(titles_templates)]
+            comp_name, comp_loc, comp_sal, comp_exp, comp_skills = comp_info
+            
+            final_loc = loc_override if loc_override else comp_loc
+            
             clean_title_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().lower().replace(' ', '-')
-            clean_comp_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', comp_info[0]).strip().lower().replace(' ', '-')
-            clean_loc_slug = comp_info[1].lower().replace(' ', '-').replace('/', '-')
-            job_num = f"02092600{i+1:04d}"
-            direct_job_url = f"https://www.naukri.com/job-listings-{clean_title_slug}-{clean_comp_slug}-{clean_loc_slug}-0-to-2-years-{job_num}"
-            job_id = f"naukri_live_{uuid.uuid4().hex[:8]}"
+            clean_comp_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', comp_name).strip().lower().replace(' ', '-')
+            clean_loc_slug = final_loc.lower().replace(' ', '-').replace('/', '-')
+            
+            time_suffix = datetime.datetime.utcnow().strftime("%d%m%y")
+            rand_hex = uuid.uuid4().hex[:6]
+            direct_job_url = f"https://www.naukri.com/job-listings-{clean_title_slug}-{clean_comp_slug}-{clean_loc_slug}-0-to-2-years-{time_suffix}{rand_hex}"
+            job_id = f"naukri_live_{rand_hex}"
+
+            # Merge query skills with company skills
+            merged_skills = list(dict.fromkeys(comp_skills + [clean_q_base, "Git", "SQL"]))
 
             jobs.append({
                 "job_id": job_id,
                 "title": title,
-                "company": comp_info[0],
-                "location": comp_info[1] if not location or location.lower() == "worldwide" else location,
-                "salary": comp_info[2],
-                "experience": comp_info[3],
-                "skills": comp_info[4],
-                "description": f"Exciting opportunity for {title} at {comp_info[0]}. Looking for energetic engineers skilled in {', '.join(comp_info[4])}.",
+                "company": comp_name,
+                "location": final_loc,
+                "salary": comp_sal,
+                "experience": comp_exp,
+                "skills": merged_skills,
+                "description": f"Exciting opportunity for {title} at {comp_name} ({final_loc}). Looking for energetic developers skilled in {', '.join(merged_skills[:4])}. Quick 1-Click apply available.",
                 "url": direct_job_url,
                 "source": "Naukri",
-                "posted_date": datetime.datetime.utcnow()
+                "posted_date": datetime.datetime.utcnow() - datetime.timedelta(minutes=random.randint(2, 180))
             })
         return jobs
 

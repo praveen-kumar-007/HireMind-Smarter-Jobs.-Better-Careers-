@@ -99,9 +99,11 @@ export default function Jobs() {
 
   // Fetch Jobs List with live 1s refetch during active crawling
   const { data: jobs, refetch, isFetching } = useQuery({
-    queryKey: ['jobs'],
+    queryKey: ['jobs', matchProfile],
     queryFn: async () => {
-      const response = await api.get('/jobs')
+      const response = await api.get('/jobs', {
+        params: { match_profile: matchProfile }
+      })
       return response.data
     },
     staleTime: 0,
@@ -133,11 +135,23 @@ export default function Jobs() {
       }
     }
 
-    // 2. Filter by location
+    // 2. Filter by location (handles worldwide, india, and regional synonyms)
     if (location.trim()) {
-      const loc = location.toLowerCase();
-      if (!job.location?.toLowerCase().includes(loc)) {
-        return false;
+      const loc = location.trim().toLowerCase();
+      if (loc !== 'worldwide' && loc !== 'india') {
+        const jobLoc = (job.location || '').toLowerCase();
+        const isLocMatch = 
+          jobLoc.includes(loc) ||
+          (loc === 'bangalore' && jobLoc.includes('bengaluru')) ||
+          (loc === 'bengaluru' && jobLoc.includes('bangalore')) ||
+          (loc === 'gurgaon' && jobLoc.includes('gurugram')) ||
+          (loc === 'gurugram' && jobLoc.includes('gurgaon')) ||
+          (loc === 'delhi' && (jobLoc.includes('noida') || jobLoc.includes('gurgaon') || jobLoc.includes('ncr') || jobLoc.includes('delhi'))) ||
+          jobLoc.includes('remote') ||
+          jobLoc.includes('india');
+        if (!isLocMatch) {
+          return false;
+        }
       }
     }
 
@@ -272,7 +286,7 @@ export default function Jobs() {
       setScanProgress(100)
       const newTotal = res.data?.length || 0
       const newDiscovered = Math.max(0, newTotal - res.prevCount)
-      setFoundNewCount(newDiscovered)
+      setFoundNewCount(newDiscovered > 0 ? newDiscovered : newTotal)
       setScanStatusText(
         newDiscovered > 0
           ? `Scan complete! Discovered ${newDiscovered} new verified IT opportunities on Naukri.`
@@ -280,7 +294,10 @@ export default function Jobs() {
       )
       setScanning(false)
       setShowScanSummary(true)
+      queryClient.setQueryData(['jobs', matchProfile], res.data)
+      queryClient.setQueryData(['jobs'], res.data)
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['applications'] })
       setToast({
         type: 'success',
         message: newDiscovered > 0 ? `Discovery complete! Added ${newDiscovered} new jobs.` : 'Job scan completed! All listings refreshed.'
