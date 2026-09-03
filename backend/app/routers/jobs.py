@@ -105,6 +105,12 @@ def get_jobs(
             ).first()
 
             if existing:
+                # Un-dismiss if previously dismissed so discovery makes it visible
+                db.query(Application).filter(
+                    Application.user_id == current_user.id,
+                    Application.job_id == existing.id,
+                    Application.status == "Dismissed"
+                ).delete()
                 db_jobs.append(existing)
             else:
                 try:
@@ -140,7 +146,7 @@ def get_jobs(
         if dismissed_ids:
             active_db_q = active_db_q.filter(~Job.id.in_(dismissed_ids))
         all_active = active_db_q.order_by(Job.created_at.desc()).limit(150).all()
-        return all_active if all_active else db_jobs[:100]
+        return all_active if (all_active and len(all_active) > 0) else db_jobs[:100]
 
     # 2. If trigger_scan is False and no jobs exist in DB, return transient fallback jobs
     job_count = db.query(Job).count()
