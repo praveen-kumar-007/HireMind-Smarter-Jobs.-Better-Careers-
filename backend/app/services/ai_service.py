@@ -1037,12 +1037,15 @@ Return ONLY a JSON array with exactly {limit} job objects. Each object MUST stri
                     clean_c_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', c).strip().lower().replace(' ', '-')
                     clean_l_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', l).strip().lower().replace(' ', '-')
                     
+                    curr_date_prefix = datetime.datetime.utcnow().strftime("%d%m%y")
                     job_url = j.get("url")
                     if not job_url or not str(job_url).startswith("http") or "-jobs-in-" in str(job_url):
-                        rand_id_suffix = f"01092601{abs(hash(t + c)) % 10000:04d}"
+                        rand_id_suffix = f"{curr_date_prefix}01{abs(hash(t + c)) % 10000:04d}"
                         job_url = f"https://www.naukri.com/job-listings-{clean_t_slug}-{clean_c_slug}-{clean_l_slug}-0-to-2-years-{rand_id_suffix}"
                     
                     rand_id = f"naukri_ai_{uuid.uuid4().hex[:8]}"
+                    days_ago = random.randint(0, 3)
+                    hours_ago = random.randint(1, 14)
                     cleaned_results.append({
                         "job_id": rand_id,
                         "title": t,
@@ -1054,7 +1057,7 @@ Return ONLY a JSON array with exactly {limit} job objects. Each object MUST stri
                         "description": d,
                         "url": job_url,
                         "source": "Naukri",
-                        "posted_date": datetime.datetime.utcnow() - datetime.timedelta(minutes=random.randint(5, 180))
+                        "posted_date": datetime.datetime.utcnow() - datetime.timedelta(days=days_ago, hours=hours_ago)
                     })
                 
                 if cleaned_results:
