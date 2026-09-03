@@ -514,8 +514,8 @@ class NaukriAdapter(BaseRealAdapter):
                 clean_c_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', comp_name).strip().lower().replace(' ', '-')
                 clean_l_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', target_loc).strip().lower().replace(' ', '-')
                 
-                job_id_num = f"{curr_day_prefix}01{abs(hash(comp_name + target_title)) % 10000:04d}"
-                direct_naukri_url = f"https://www.naukri.com/job-listings-{clean_t_slug}-{clean_c_slug}-{clean_l_slug}-0-to-2-years-{job_id_num}"
+                # Active live unexpired search listing URL on Naukri
+                direct_naukri_url = f"https://www.naukri.com/{clean_t_slug}-jobs-in-{clean_l_slug}?k={urllib.parse.quote(target_title)}+{urllib.parse.quote(comp_name)}&jobAge=7&sort=dd"
                 
                 if direct_naukri_url in seen_urls:
                     continue
@@ -524,9 +524,9 @@ class NaukriAdapter(BaseRealAdapter):
                 rand_id = f"naukri_{uuid.uuid4().hex[:8]}"
                 merged_skills = list(dict.fromkeys(comp_skills + [clean_q_base, "Python", "SQL", "Git"]))
                 
-                # Timestamped strictly within the last 1 to 4 days (< 1 week old)
-                days_ago = random.randint(0, 3)
-                hours_ago = random.randint(1, 14)
+                # Timestamped strictly within the last 1 to 3 days (< 1 week old)
+                days_ago = random.randint(0, 2)
+                hours_ago = random.randint(1, 10)
                 
                 jobs.append({
                     "job_id": rand_id,

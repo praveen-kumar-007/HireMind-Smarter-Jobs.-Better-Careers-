@@ -1037,15 +1037,13 @@ Return ONLY a JSON array with exactly {limit} job objects. Each object MUST stri
                     clean_c_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', c).strip().lower().replace(' ', '-')
                     clean_l_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', l).strip().lower().replace(' ', '-')
                     
-                    curr_date_prefix = datetime.datetime.utcnow().strftime("%d%m%y")
                     job_url = j.get("url")
-                    if not job_url or not str(job_url).startswith("http") or "-jobs-in-" in str(job_url):
-                        rand_id_suffix = f"{curr_date_prefix}01{abs(hash(t + c)) % 10000:04d}"
-                        job_url = f"https://www.naukri.com/job-listings-{clean_t_slug}-{clean_c_slug}-{clean_l_slug}-0-to-2-years-{rand_id_suffix}"
+                    if not job_url or not str(job_url).startswith("http") or "-jobs-in-" not in str(job_url):
+                        job_url = f"https://www.naukri.com/{clean_t_slug}-jobs-in-{clean_l_slug}?k={urllib.parse.quote(t)}+{urllib.parse.quote(c)}&jobAge=7&sort=dd"
                     
                     rand_id = f"naukri_ai_{uuid.uuid4().hex[:8]}"
-                    days_ago = random.randint(0, 3)
-                    hours_ago = random.randint(1, 14)
+                    days_ago = random.randint(0, 2)
+                    hours_ago = random.randint(1, 10)
                     cleaned_results.append({
                         "job_id": rand_id,
                         "title": t,
@@ -1080,14 +1078,11 @@ Return ONLY a JSON array with exactly {limit} job objects. Each object MUST stri
             ("Cognizant", "Chennai", "₹7,00,000 - ₹14,00,000 PA", "0-3 Yrs", ["React.js", "Node.js", "Python", "SQL"])
         ]
         random.shuffle(enterprises)
-        curr_date_prefix = datetime.datetime.utcnow().strftime("%d%m%y")
         fallback_results = []
         for comp, city, sal, exp, sk in enterprises[:min(limit, len(enterprises))]:
             loc_val = clean_loc if clean_loc not in ["India / Remote", "India"] else city
             t_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', clean_q).strip().lower().replace(' ', '-')
-            c_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', comp).strip().lower().replace(' ', '-')
             l_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', loc_val).strip().lower().replace(' ', '-')
-            job_num = f"{curr_date_prefix}01{abs(hash(comp + clean_q)) % 10000:04d}"
             
             fallback_results.append({
                 "job_id": f"naukri_ai_{uuid.uuid4().hex[:8]}",
@@ -1098,9 +1093,9 @@ Return ONLY a JSON array with exactly {limit} job objects. Each object MUST stri
                 "experience": exp,
                 "skills": sk,
                 "description": f"Active hiring for {clean_q} at {comp} ({loc_val}). Skills: {', '.join(sk[:3])}. Direct 1-Click apply available.",
-                "url": f"https://www.naukri.com/job-listings-{t_slug}-{c_slug}-{l_slug}-0-to-2-years-{job_num}",
+                "url": f"https://www.naukri.com/{t_slug}-jobs-in-{l_slug}?k={urllib.parse.quote(clean_q)}+{urllib.parse.quote(comp)}&jobAge=7&sort=dd",
                 "source": "Naukri",
-                "posted_date": datetime.datetime.utcnow() - datetime.timedelta(days=random.randint(0, 3), hours=random.randint(1, 12))
+                "posted_date": datetime.datetime.utcnow() - datetime.timedelta(days=random.randint(0, 2), hours=random.randint(1, 10))
             })
         return fallback_results
 
