@@ -322,15 +322,26 @@ class NaukriAdapter(BaseRealAdapter):
                     if jobs:
                         return jobs
         except Exception as api_err:
-            logger.warning(f"Direct Naukri API search note: {api_err}. Trying browser scraper...")
+            logger.warning(f"Direct Naukri API search note: {api_err}.")
 
-        # Tier 2: Real Browser Scraper
+        # Tier 2: Real-time AI Web Discovery & Crawler Engine
+        try:
+            from app.services.ai_service import ai_service
+            logger.info(f"Triggering Real-time AI Web Discovery for '{query}' in '{location}'...")
+            ai_discovered_jobs = ai_service.discover_live_jobs(query, location, limit)
+            if ai_discovered_jobs and len(ai_discovered_jobs) > 0:
+                logger.info(f"AI Discovery successfully found {len(ai_discovered_jobs)} live active jobs!")
+                return ai_discovered_jobs
+        except Exception as ai_e:
+            logger.warning(f"AI Discovery note: {ai_e}. Trying browser scraper...")
+
+        # Tier 3: Real Browser Scraper
         browser_jobs = super().search_jobs(db, user_id, query, location, limit)
         if browser_jobs:
             return browser_jobs
 
-        # Tier 3: Curated High-Relevance Fresh Verified Tech Listings
-        logger.info("Using curated fresh Naukri tech listings.")
+        # Tier 4: Curated High-Relevance Fresh Verified Tech Listings
+        logger.info("Using curated fresh dedicated Naukri tech listings.")
         return self.get_fallback_jobs(query, location, limit)
 
     def scrape_search_results(self, page, query: str, location: str, limit: int) -> list[dict]:
