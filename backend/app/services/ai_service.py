@@ -1007,7 +1007,7 @@ Return ONLY a JSON array with exactly {limit} job objects. Each object MUST stri
                 task_type="extraction",
                 system_prompt=system_prompt,
                 temperature=0.3,
-                timeout_override=25
+                timeout_override=3
             )
             parsed_jobs = extract_json_from_text(raw_response)
             if isinstance(parsed_jobs, dict) and "jobs" in parsed_jobs:
