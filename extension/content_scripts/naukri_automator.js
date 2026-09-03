@@ -135,6 +135,15 @@ async function runNaukriAutomation(appId, job, candidate, resumeData, updateWidg
     }
   }
 
+  // Step 1.5: Auto-recover from Next.js error "Oops! Something went wrong"
+  const oopsReloadBtn = Array.from(document.querySelectorAll('button, a')).find(b => (b.innerText || '').trim().toLowerCase() === 'reload');
+  if (oopsReloadBtn) {
+    console.log('[HireMind] Detected "Oops! Something went wrong" error page. Auto-clicking Reload button...');
+    updateWidget('Reloading', 20, 'Recovering from Naukri page load error...');
+    await HireMindCommon.humanClick(oopsReloadBtn);
+    await HireMindCommon.delay(4000);
+  }
+
   // Step 2: Dynamic SPA Page Scanner (polls for up to 15s for React/DOM elements to hydrate)
   updateWidget('Scanning Page', 30, 'Scanning job page for apply options and active sessions...');
   await HireMindCommon.logStep(appId, 'Scanning Page', 30, 'Scanning Naukri job page elements and checking session...');

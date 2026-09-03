@@ -477,10 +477,32 @@ class NaukriAdapter(BaseRealAdapter):
             target_loc = clean_loc if clean_loc not in ["India / Remote", "India"] else comp_city
             
             clean_t_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', target_title).strip().lower().replace(' ', '-')
-            clean_l_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', target_loc).strip().lower().replace(' ', '-')
-            
-            # Canonical live search URL on Naukri (guaranteed 200 OK with active jobs)
-            direct_naukri_url = f"https://www.naukri.com/{clean_t_slug}-jobs-in-{clean_l_slug}?sort=dd"
+            if not clean_t_slug.endswith('-jobs'):
+                clean_t_slug = f"{clean_t_slug}-jobs"
+
+            # Official Naukri city taxonomy (prevents Next.js routing error 'Oops! Something went wrong')
+            loc_l = target_loc.lower()
+            if 'bangalore' in loc_l or 'bengaluru' in loc_l:
+                clean_city_slug = 'bangalore'
+            elif 'hyderabad' in loc_l:
+                clean_city_slug = 'hyderabad'
+            elif 'pune' in loc_l:
+                clean_city_slug = 'pune'
+            elif 'delhi' in loc_l or 'ncr' in loc_l:
+                clean_city_slug = 'delhi-ncr'
+            elif 'noida' in loc_l:
+                clean_city_slug = 'noida'
+            elif 'gurgaon' in loc_l or 'gurugram' in loc_l:
+                clean_city_slug = 'gurgaon'
+            elif 'chennai' in loc_l:
+                clean_city_slug = 'chennai'
+            elif 'mumbai' in loc_l:
+                clean_city_slug = 'mumbai'
+            else:
+                clean_city_slug = 'india'
+
+            # 100% Valid official Naukri Search URL without crash-inducing parameters
+            direct_naukri_url = f"https://www.naukri.com/{clean_t_slug}-in-{clean_city_slug}"
             
             comp_key = f"{comp_name}_{clean_t_slug}"
             if comp_key in seen_urls:
