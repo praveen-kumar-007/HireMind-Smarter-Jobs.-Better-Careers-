@@ -54,6 +54,10 @@ class BaseRealAdapter(JobProviderAdapter):
                 UserPlatformCredential.is_active == True
             ).first()
 
+        if not sync_playwright:
+            logger.warning(f"Playwright not installed or available for {self.source_name}.")
+            return []
+
         try:
             with sync_playwright() as p:
                 import os
@@ -830,7 +834,7 @@ class JobDiscoveryService:
                     else:
                         saved_jobs.extend(results)
             except Exception as ex:
-                logger.warning(f"Provider task error for {prov.source_name}: {ex}")
+                logger.warning(f"Provider task error for {prov}: {ex}")
 
         return saved_jobs
 
