@@ -258,19 +258,29 @@ class RAGService:
 
         # Candidate profile metadata
         profile = db.query(Profile).filter(Profile.user_id == user_id).first()
-        exp_years = 2
+        exp_years = getattr(profile, 'experience_years', None) if profile else None
+        if exp_years is None:
+            exp_years = 2
         notice = profile.notice_period if profile and profile.notice_period else "Immediate / 15 days"
-        ctc = profile.salary_expectation if profile and profile.salary_expectation else "Negotiable"
+
+        # Determine if role / candidate is fresher (0-1 yrs) or experienced (> 2 yrs)
+        is_fresher = exp_years <= 1 or any(k in job_title.lower() or k in (job_description or "").lower() for k in ["fresher", "0-1", "0 - 1", "entry level", "trainee", "intern"])
 
         # Direct short answers for common factual screening questions
-        if re.search(r'\b(years of experience|total experience|how many years)\b', q_lower):
-            return sanitize_rag_output(f"{exp_years} years of professional experience.")
-        if re.search(r'\b(notice period|how soon can you join|joining time)\b', q_lower):
-            return sanitize_rag_output(f"I can join {notice}.")
-        if re.search(r'\b(expected ctc|expected salary|current ctc|salary expectation)\b', q_lower):
-            return sanitize_rag_output(f"My expected CTC is {ctc}, negotiable based on the role and growth opportunities.")
+        if re.search(r'\b(years of experience|total experience|how many years|experience in years)\b', q_lower):
+            return f"{exp_years}" if any(k in q_lower for k in ["how many", "in years", "total years"]) else f"{exp_years} years"
+        if re.search(r'\b(notice period|how soon can you join|joining time|available to join)\b', q_lower):
+            return "Immediate / 15 days" if "immediate" in notice.lower() else notice
+        if re.search(r'\b(ctc|salary|compensation|in lacs|in lakhs|per annum|fixed pay)\b', q_lower):
+            asks_in_lacs = any(k in q_lower for k in ["in lacs", "in lakhs", "lacs per annum", "lakhs per annum", "lpa", "in lpa"])
+            if is_fresher:
+                return "1" if asks_in_lacs else "NA"
+            else:
+                return "3.5 LPA" if asks_in_lacs else "300000"
+        if re.search(r'\b(joining date|available from|start date|date of joining)\b', q_lower):
+            return "Immediate / within 15 days"
         if re.search(r'\b(current location|residing in|preferred location|willing to relocate)\b', q_lower):
-            return sanitize_rag_output(f"I am based in {profile.location if profile and profile.location else 'India'} and open to work on-site / hybrid / remote.")
+            return f"{profile.location if profile and profile.location else 'Bangalore, India'}"
 
         prompt = f"""You are the candidate answering a recruiter's screening question. Answer with utmost professionalism, confidence, and precision.
 

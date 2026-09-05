@@ -695,6 +695,9 @@ function findAffirmativeOption() {
 /**
  * Find the active Naukri chatbot drawer or modal container
  */
+/**
+ * Find the active Naukri chatbot drawer or modal container
+ */
 function getNaukriDrawerContainer() {
   const drawerSelectors = [
     '.chatbot_Drawer',
@@ -708,23 +711,31 @@ function getNaukriDrawerContainer() {
     '[class*="apply-drawer"]',
     '[class*="applyDrawer"]',
     '[class*="chatbot"]',
-    'div[class*="drawer"][class*="open"]',
-    'div[class*="drawer"][class*="visible"]',
-    'div[class*="drawer"][class*="active"]',
     'div[class*="drawer"]',
+    'section[class*="drawer"]',
     '[role="dialog"]',
-    '.modal-content',
-    '[class*="apply-modal"]'
+    '.modal-content'
   ];
   for (const sel of drawerSelectors) {
-    const el = document.querySelector(sel);
-    if (el) {
+    const els = Array.from(document.querySelectorAll(sel));
+    for (const el of els) {
       const r = el.getBoundingClientRect();
       const style = window.getComputedStyle(el);
-      if (r.width > 120 && r.height > 120 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-        return el;
+      if (r.width > 200 && r.height > 200 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+        if (r.left >= window.innerWidth * 0.45 || el.getAttribute('role') === 'dialog') {
+          return el;
+        }
       }
     }
+  }
+
+  // Fallback: search for right-side container with chatbot inputs or bubbles
+  const candidates = Array.from(document.querySelectorAll('div, section, aside')).filter(el => {
+    const r = el.getBoundingClientRect();
+    return r.width > 240 && r.height > 300 && r.left >= window.innerWidth * 0.45 && r.top <= 120;
+  });
+  if (candidates.length > 0) {
+    return candidates[candidates.length - 1];
   }
   return null;
 }
@@ -733,38 +744,28 @@ function getNaukriDrawerContainer() {
  * Find all options in the active questionnaire drawer
  */
 function findAllChatbotOptions(root = document) {
-  const drawer = root === document ? getNaukriDrawerContainer() : null;
+  const drawer = root === document ? getNaukriDrawerContainer() : (root || null);
   const searchRoot = drawer || root;
+  const rightBoundary = window.innerWidth * 0.48;
 
   const candidateSelectors = [
-    'button',
-    'li',
-    'label',
-    'div[role="button"]',
-    'span[role="button"]',
     'div[role="radio"]',
     'div[role="checkbox"]',
-    'div[class*="option"]',
-    'div[class*="choice"]',
+    'input[type="radio"]',
+    'input[type="checkbox"]',
     'div[class*="radio"]',
-    'span[class*="radio"]',
+    'div[class*="choice"]',
+    'div[class*="option"]',
     'div[class*="chip"]',
     'div[class*="pill"]',
+    'div[class*="botOption"]',
     'div[class*="botItem"]',
-    'div[class*="item"]',
-    'div[class*="listItem"]',
-    'div[class*="tag"]',
-    'div[class*="bubble"]',
-    'div[class*="answer"]',
     'span[class*="chip"]',
     'span[class*="pill"]',
     'span[class*="option"]',
-    'p[class*="option"]',
-    'input[type="radio"]',
-    'input[type="checkbox"]'
+    'label',
+    'li'
   ];
-
-  const rightBoundary = window.innerWidth * 0.35;
 
   const matched = Array.from(searchRoot.querySelectorAll(candidateSelectors.join(', '))).filter(el => {
     const r = el.getBoundingClientRect();
@@ -773,17 +774,22 @@ function findAllChatbotOptions(root = document) {
     // Filter out footers, play store, app download links
     const href = (el.getAttribute('href') || '').toLowerCase();
     if (href.includes('play.google.com') || href.includes('apple.com') || href.includes('utm_medium=footer')) return false;
-    if (el.closest('footer') || el.closest('[class*="footer"]:not([class*="drawer"]):not([class*="chat"]):not([class*="bot"])')) return false;
+    if (el.closest('footer') || el.closest('[class*="footer"]')) return false;
 
-    // Must be on the right side of the screen inside the questionnaire drawer if no explicit drawer found
+    // Must be in the right half of the screen and below top navbar (top > 65)
     if (!drawer && r.left < rightBoundary) return false;
+    if (r.top < 65) return false;
 
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+
     const txt = (el.innerText || el.textContent || '').trim();
     if (txt.length === 0 || txt.length > 80) return false;
     const tLower = txt.toLowerCase();
+    // Exclude header navbar items and common messages
+    if (tLower === 'participate' || tLower === 'prepare' || tLower === 'opportunities' || tLower === 'squad' || tLower === 'save' || tLower === 'submit') return false;
     if (tLower.includes('thank you for showing') || tLower.includes('kindly answer') || tLower.includes('recruiter question')) return false;
+
     return true;
   });
 
@@ -1075,9 +1081,13 @@ function resolveQuestionIntent(questionText, candidate) {
     return { type: 'experience', value: String(cand.experience_years || 2), confidence: 0.9 };
   }
 
-  // CTC / Salary Check
-  if (q.includes('ctc') || q.includes('salary') || q.includes('compensation') || q.includes('lpa')) {
-    return { type: 'ctc', value: cand.expected_ctc || '500000', confidence: 0.9 };
+  // CTC / Salary Check (Adhering to fresher vs experienced rules)
+  if (q.includes('ctc') || q.includes('salary') || q.includes('compensation') || q.includes('lpa') || q.includes('lacs') || q.includes('lakhs')) {
+    const candExpYears = Number(cand.experience_years || 0);
+    const isFresher = candExpYears <= 1;
+    const asksInLacs = q.includes('lacs') || q.includes('lakhs') || q.includes('lpa');
+    const val = isFresher ? (asksInLacs ? '1' : 'NA') : (asksInLacs ? '3.5 LPA' : '300000');
+    return { type: 'ctc', value: val, confidence: 0.95 };
   }
 
   // Location Check
@@ -1095,7 +1105,7 @@ function resolveQuestionIntent(questionText, candidate) {
 function findActiveChatbotOptions() {
   const drawer = getNaukriDrawerContainer();
   const searchRoot = drawer || document;
-  const rightBoundary = window.innerWidth * 0.35;
+  const rightBoundary = window.innerWidth * 0.48;
 
   const candidateSelectors = [
     'div[role="radio"]',
@@ -1108,7 +1118,9 @@ function findActiveChatbotOptions() {
     'div[class*="chip"]',
     'div[class*="pill"]',
     'div[class*="botOption"]',
-    'div[class*="ListItem"]',
+    'span[class*="chip"]',
+    'span[class*="pill"]',
+    'span[class*="option"]',
     'label',
     'li'
   ];
@@ -1122,8 +1134,9 @@ function findActiveChatbotOptions() {
     if (href.includes('play.google.com') || href.includes('apple.com') || href.includes('utm_medium=footer')) return false;
     if (el.closest('footer')) return false;
 
-    // Must be in the right half of the screen
+    // Must be in the right half of the screen and below top navbar
     if (!drawer && r.left < rightBoundary) return false;
+    if (r.top < 65) return false;
 
     // Filter out already answered bubbles in chat history (which contain edit icons or user message classes)
     const elClass = (el.className || '').toString().toLowerCase();
@@ -1136,6 +1149,7 @@ function findActiveChatbotOptions() {
     const txt = (el.innerText || el.textContent || '').trim();
     if (txt.length === 0 || txt.length > 70) return false;
     const tLower = txt.toLowerCase();
+    if (tLower === 'participate' || tLower === 'prepare' || tLower === 'opportunities' || tLower === 'squad' || tLower === 'save' || tLower === 'submit') return false;
     if (tLower.includes('thank you for showing') || tLower.includes('kindly answer') || tLower.includes('recruiter question') || tLower === 'save' || tLower === 'submit') return false;
 
     return true;
@@ -1304,55 +1318,182 @@ function findMatchingOptionForAnswer(intent, candidateOptions = null) {
 /**
  * Comprehensive handler for screening questions, options, inputs, and Save button
  */
+/**
+ * Comprehensive handler for screening questions, options, inputs, and Save button
+ */
 async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidget) {
   console.log('[HireMind Naukri] Handling screening questions and chatbot drawer...');
   updateWidget('Screening Bot', 65, 'Screening questionnaire active. Auto-answering...');
   await HireMindCommon.logStep(appId, 'Screening Bot Detected', 65, 'Screening questionnaire detected. Answering questions with AI...');
 
-  // Multi-turn active loop (up to 30 iterations)
-  for (let turn = 0; turn < 30; turn++) {
+  // Multi-turn active loop (up to 25 iterations)
+  for (let turn = 0; turn < 25; turn++) {
     if (isNaukriAlreadyApplied()) {
       console.log('[HireMind Naukri] Successfully applied during screening.');
       return true;
     }
 
-    await HireMindCommon.delay(800);
+    await HireMindCommon.delay(700);
 
     const drawer = getNaukriDrawerContainer();
     const searchRoot = drawer || document;
 
-    // 1. Extract active question text from drawer (the LAST question asked)
+    // 1. Extract active question text from drawer (ignoring header nav / buttons)
     const questionNodes = Array.from(searchRoot.querySelectorAll('p, div, span, h2, h3, h4, h5, label')).filter(el => {
       const t = (el.innerText || '').trim();
       const tLower = t.toLowerCase();
-      if (t.length < 5 || t.length > 250) return false;
-      if (tLower.includes('thank you for showing') || tLower.includes('kindly answer') || tLower.includes('grievance') || tLower.includes('download')) return false;
+      if (t.length < 4 || t.length > 300) return false;
+      if (tLower.includes('thank you for showing') || tLower.includes('kindly answer') || tLower.includes('grievance') || tLower.includes('download') || tLower.includes('participate') || tLower.includes('prepare')) return false;
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && (drawer || r.left > window.innerWidth * 0.35 || t.includes('?'));
+      return r.width > 0 && r.height > 0 && r.left >= window.innerWidth * 0.45 && r.top >= 60;
     });
 
     const activeQuestion = questionNodes.length > 0 ? (questionNodes[questionNodes.length - 1].innerText || '').trim() : '';
     console.log(`[HireMind Naukri] Active question (${turn + 1}): "${activeQuestion}"`);
 
-    // 2. Resolve smart answer based on question intent and candidate profile
-    const intent = resolveQuestionIntent(activeQuestion, candidate);
-    console.log(`[HireMind Naukri] Resolved answer intent:`, intent);
+    // 2. CHECK FOR TEXT INPUTS / TEXTAREAS / DATES FIRST (Crucial: prevents skipping text inputs!)
+    const textInputs = Array.from(searchRoot.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], input:not([type]), textarea, div[contenteditable="true"]')).filter(el => {
+      const r = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      if (r.width <= 20 || r.height <= 10) return false;
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      // Must be inside the right drawer and below top navbar
+      if (r.left < window.innerWidth * 0.45 || r.top < 65) return false;
+      return true;
+    });
 
-    // 3. Find active unselected radio options for current question
+    if (textInputs.length > 0) {
+      console.log(`[HireMind Naukri] Found ${textInputs.length} input field(s) for active question.`);
+      for (const textInput of textInputs) {
+        const inputId = (textInput.id || '').toLowerCase();
+        const inputName = (textInput.name || '').toLowerCase();
+        const inputPlaceholder = (textInput.placeholder || '').toLowerCase();
+        const inputType = (textInput.type || 'text').toLowerCase();
+        const fullCtx = `${activeQuestion} ${inputId} ${inputName} ${inputPlaceholder}`.toLowerCase();
+
+        let answer = '';
+
+        // Case A: CTC / Salary Question (Strictly applying user rules)
+        const isCTC = fullCtx.includes('ctc') || fullCtx.includes('salary') || fullCtx.includes('compensation') || fullCtx.includes('lpa') || fullCtx.includes('lacs') || fullCtx.includes('lakhs') || inputPlaceholder.includes('lakh') || inputPlaceholder.includes('lac');
+        if (isCTC) {
+          const jobExpStr = ((job.experience || '') + ' ' + (job.title || '')).toLowerCase();
+          const candExpYears = Number(candidate.experience_years || 0);
+          const isFresher = candExpYears <= 1 || jobExpStr.includes('0-1') || jobExpStr.includes('0 - 1') || jobExpStr.includes('0-2') || jobExpStr.includes('0 to 1') || jobExpStr.includes('fresher') || jobExpStr.includes('intern');
+          const asksInLacs = fullCtx.includes('lacs') || fullCtx.includes('lakhs') || fullCtx.includes('lpa') || inputPlaceholder.includes('lakh') || inputPlaceholder.includes('lac');
+
+          if (isFresher) {
+            // User rule: "if job is for fresher with 0-1 yrs experience write there NA or 1"
+            if (inputType === 'number') {
+              answer = '1';
+            } else {
+              answer = asksInLacs ? '1' : 'NA';
+            }
+          } else {
+            // User rule: "if for experience more than 2 year write 3.5LPA or 300000"
+            if (inputType === 'number') {
+              answer = asksInLacs ? '3.5' : '300000';
+            } else {
+              answer = asksInLacs ? '3.5 LPA' : '300000';
+            }
+          }
+        }
+        // Case B: Date input or Date-related question
+        else if (inputType === 'date') {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          answer = tomorrow.toISOString().split('T')[0];
+        } else if (fullCtx.includes('joining date') || fullCtx.includes('available from') || fullCtx.includes('start date') || fullCtx.includes('date of joining') || fullCtx.includes('when can you join')) {
+          answer = 'Immediate / within 15 days';
+        }
+        // Case C: Experience Question
+        else if (fullCtx.includes('total experience') || fullCtx.includes('years of experience') || fullCtx.includes('experience in years') || fullCtx.includes('how many years')) {
+          answer = String(candidate.experience_years || 2);
+        }
+        // Case D: Notice Period
+        else if (fullCtx.includes('notice period') || fullCtx.includes('how soon') || fullCtx.includes('notice')) {
+          answer = inputType === 'number' ? '15' : (candidate.notice_period || 'Immediate / 15 days');
+        }
+        // Case E: Location / City
+        else if (fullCtx.includes('current location') || fullCtx.includes('current city') || fullCtx.includes('residing')) {
+          answer = candidate.location || 'Bangalore, India';
+        }
+        // Case F: Open-Ended / Technical / Screening Question -> Use AI RAG Vector Engine!
+        else {
+          updateWidget('AI RAG Thinking', Math.min(70 + turn * 2, 94), 'Analyzing question with resume vector data...');
+          await HireMindCommon.logStep(appId, 'AI Screening Question', 70, `Asking AI RAG engine for '${activeQuestion.slice(0, 35)}...'`);
+          try {
+            const aiRes = await HireMindCommon.sendMessage('GENERATE_AI_ANSWER', {
+              appId,
+              question: activeQuestion,
+              jobTitle: job.title,
+              jobDesc: job.description || ''
+            });
+            if (aiRes && aiRes.answer && aiRes.answer.trim().length > 3) {
+              answer = aiRes.answer.trim();
+            } else {
+              answer = 'Yes, I have relevant hands-on skills and domain experience for this role.';
+            }
+          } catch (e) {
+            console.warn('[HireMind Naukri] AI answer fallback:', e);
+            answer = 'Yes, I have relevant hands-on skills and domain experience for this role.';
+          }
+        }
+
+        console.log(`[HireMind Naukri] Filling text input with: "${answer}"`);
+        updateWidget('Filling Answer', Math.min(72 + turn * 2, 94), `Answer: "${answer}"`);
+        await HireMindCommon.humanType(textInput, answer);
+        await HireMindCommon.delay(300);
+      }
+
+      // Click Save after filling inputs
+      updateWidget('Saving & Proceeding', Math.min(75 + turn * 2, 95), 'Clicking Save button...');
+      await clickDrawerSaveButton();
+      await HireMindCommon.delay(1200);
+
+      if (isNaukriAlreadyApplied()) return true;
+      continue;
+    }
+
+    // 3. CHECK FOR CHECKBOXES
+    const checkboxes = Array.from(searchRoot.querySelectorAll('input[type="checkbox"], div[role="checkbox"]')).filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.left >= window.innerWidth * 0.45 && r.top >= 65;
+    });
+    if (checkboxes.length > 0) {
+      let checkedAny = false;
+      for (const cb of checkboxes) {
+        if (cb.tagName === 'INPUT' && !cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          cb.dispatchEvent(new Event('input', { bubbles: true }));
+          cb.click();
+          checkedAny = true;
+        } else if (cb.getAttribute('role') === 'checkbox' && cb.getAttribute('aria-checked') !== 'true') {
+          cb.click();
+          checkedAny = true;
+        }
+      }
+      if (checkedAny) {
+        await HireMindCommon.delay(300);
+        await clickDrawerSaveButton();
+        await HireMindCommon.delay(1200);
+        if (isNaukriAlreadyApplied()) return true;
+        continue;
+      }
+    }
+
+    // 4. CHECK FOR RADIO / CHOICE OPTIONS (Strictly inside drawer)
     const activeOptions = findActiveChatbotOptions();
     if (activeOptions.length > 0) {
-      const targetOptionEl = findMatchingOptionForAnswer(intent, activeOptions);
+      const intent = resolveQuestionIntent(activeQuestion, candidate);
+      const targetOptionEl = findMatchingOptionForAnswer(intent, activeOptions) || activeOptions[0];
       if (targetOptionEl) {
         const optLabel = (targetOptionEl.innerText || targetOptionEl.textContent || intent.value).trim();
-        console.log(`[HireMind Naukri] Selecting resolved option: "${optLabel}"`);
+        console.log(`[HireMind Naukri] Selecting option: "${optLabel}"`);
         updateWidget('Selecting Option', Math.min(70 + turn * 3, 94), `Selecting "${optLabel}"...`);
-        await HireMindCommon.logStep(appId, `Answer Question ${turn + 1}`, Math.min(70 + turn * 3, 94), `Selected: "${optLabel}" for '${activeQuestion.slice(0, 35)}...'`);
         await selectOptionElement(targetOptionEl);
-        await HireMindCommon.delay(600);
+        await HireMindCommon.delay(500);
 
-        // Click Save after selecting option
-        updateWidget('Saving & Proceeding', Math.min(72 + turn * 3, 95), 'Clicking Save button...');
-        await HireMindCommon.logStep(appId, 'Save Answer', Math.min(72 + turn * 3, 95), 'Saving answered screening question...');
         await clickDrawerSaveButton();
         await HireMindCommon.delay(1200);
 
@@ -1361,93 +1502,37 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       }
     }
 
-    // 4. Fallback option selection if intent didn't match exact text
-    const otherOptions = findAllChatbotOptions(document);
-    if (otherOptions.length > 0) {
-      const fallbackOpt = otherOptions[0];
-      const optTxt = (fallbackOpt.innerText || fallbackOpt.textContent || 'Option').trim();
-      console.log(`[HireMind Naukri] Fallback selecting option card: "${optTxt}"`);
-      updateWidget('Selecting Option', Math.min(70 + turn * 2, 94), `Selecting: "${optTxt}"`);
-      await selectOptionElement(fallbackOpt);
-      await HireMindCommon.delay(500);
-
-      // IMMEDIATELY click Save after selecting option!
-      updateWidget('Saving & Proceeding', Math.min(72 + turn * 2, 95), 'Clicking Save button...');
+    // 5. CHECK FOR HTML <select> DROPDOWNS
+    const selectElements = Array.from(searchRoot.querySelectorAll('select')).filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && !el.disabled && r.left >= window.innerWidth * 0.45 && r.top >= 65;
+    });
+    if (selectElements.length > 0) {
+      for (const selectEl of selectElements) {
+        const opts = Array.from(selectEl.options);
+        if (opts.length > 1) {
+          selectEl.value = opts[1].value;
+          selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+          selectEl.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      await HireMindCommon.delay(300);
       await clickDrawerSaveButton();
       await HireMindCommon.delay(1200);
-
       if (isNaukriAlreadyApplied()) return true;
       continue;
     }
 
-    // 5. Handle HTML <select> dropdowns if any
-    const selectElements = Array.from(document.querySelectorAll('select')).filter(el => {
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && !el.disabled;
-    });
-    for (const selectEl of selectElements) {
-      const opts = Array.from(selectEl.options);
-      if (opts.length > 1) {
-        selectEl.value = opts[1].value;
-        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-        selectEl.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    }
-
-    // 6. Handle Text / Number / Date / Textarea input fields
-    const textInputs = Array.from(searchRoot.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], input:not([type]), textarea, div[contenteditable="true"]')).filter(el => {
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && (drawer || r.left > window.innerWidth * 0.35) && (!el.value || el.value.trim().length === 0);
-    });
-
-    for (const textInput of textInputs) {
-      const inputId = (textInput.id || '').toLowerCase();
-      const inputName = (textInput.name || '').toLowerCase();
-      const inputPlaceholder = (textInput.placeholder || '').toLowerCase();
-      const inputType = (textInput.type || 'text').toLowerCase();
-      const inputCtx = `${activeQuestion.toLowerCase()} ${inputId} ${inputName} ${inputPlaceholder}`;
-
-      let answer = '';
-      if (inputType === 'date') {
-        answer = '2024-06-01';
-      } else if (inputCtx.includes('experience') || inputCtx.includes('years') || inputCtx.includes('exp')) {
-        answer = `${candidate.experience_years || 2}`;
-      } else if (inputCtx.includes('notice') || inputCtx.includes('joining') || inputCtx.includes('days')) {
-        answer = inputType === 'number' ? '15' : '15 days';
-      } else if (inputCtx.includes('current ctc') || inputCtx.includes('fixed ctc')) {
-        answer = '350000';
-      } else if (inputCtx.includes('expected ctc') || inputCtx.includes('salary')) {
-        answer = '500000';
-      } else if (inputCtx.includes('location') || inputCtx.includes('city')) {
-        answer = candidate.location || 'Bangalore, India';
-      } else {
-        answer = 'Yes, I have relevant hands-on skills and domain experience for this role.';
-      }
-
-      console.log(`[HireMind Naukri] Typing answer: "${answer}"`);
-      updateWidget('Filling Answer', Math.min(72 + turn * 2, 94), `Answer: "${answer}"`);
-      await HireMindCommon.humanType(textInput, answer);
-      await HireMindCommon.delay(300);
-    }
-
-    // 7. Click Save button after answering input
-    updateWidget('Saving & Proceeding', Math.min(75 + turn * 2, 95), 'Clicking Save button...');
+    // 6. If no active input/option was matched, try clicking Save if available
     const saveClicked = await clickDrawerSaveButton();
-
-    // 8. Check if done after saving
-    if (isNaukriAlreadyApplied()) {
-      return true;
-    }
-
-    // If no save button was found, check if more questions exist
-    if (!saveClicked) {
+    if (saveClicked) {
       await HireMindCommon.delay(1500);
       if (isNaukriAlreadyApplied()) return true;
-      const hasMoreSave = await clickDrawerSaveButton();
-      if (!hasMoreSave) {
-        console.log('[HireMind Naukri] No more active questions or save buttons found.');
-        break;
-      }
+    } else {
+      await HireMindCommon.delay(1000);
+      if (isNaukriAlreadyApplied()) return true;
+      console.log('[HireMind Naukri] No more active elements or save button in drawer.');
+      break;
     }
   }
 

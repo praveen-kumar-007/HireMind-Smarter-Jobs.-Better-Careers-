@@ -19,31 +19,49 @@ const HireMindCommon = {
   },
 
   /**
-   * Human-like typing into input or textarea with native event dispatch
+   * Human-like typing into input or textarea with native event dispatch and React controlled state support
    */
   async humanType(element, text) {
     if (!element) return;
+    const strText = String(text !== undefined && text !== null ? text : '');
     try {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      await this.delay(150);
+      await this.delay(100);
       element.focus();
       element.click();
-      await this.delay(100);
+      await this.delay(80);
 
-      // Clear existing value if needed
-      element.value = '';
+      // React controlled input helper: invoke prototype value setter to trigger internal tracker
+      const proto = element.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+
+      if (nativeSetter) {
+        nativeSetter.call(element, '');
+      } else {
+        element.value = '';
+      }
       element.dispatchEvent(new Event('input', { bubbles: true }));
 
-      // Fast human typing
-      if (text.length > 50) {
-        element.value = text;
+      // Type each character or set value
+      if (strText.length > 60) {
+        if (nativeSetter) {
+          nativeSetter.call(element, strText);
+        } else {
+          element.value = strText;
+        }
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
       } else {
-        for (let i = 0; i < text.length; i++) {
-          element.value += text[i];
+        let current = '';
+        for (let i = 0; i < strText.length; i++) {
+          current += strText[i];
+          if (nativeSetter) {
+            nativeSetter.call(element, current);
+          } else {
+            element.value = current;
+          }
           element.dispatchEvent(new Event('input', { bubbles: true }));
-          await this.delay(Math.floor(Math.random() * 20) + 15);
+          await this.delay(15);
         }
         element.dispatchEvent(new Event('change', { bubbles: true }));
       }
@@ -52,7 +70,7 @@ const HireMindCommon = {
     } catch (err) {
       console.warn('[HireMind Common] Type error:', err);
       try {
-        element.value = text;
+        element.value = strText;
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
       } catch (e) {}
