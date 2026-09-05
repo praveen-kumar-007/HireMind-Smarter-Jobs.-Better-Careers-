@@ -517,16 +517,25 @@ async function waitForNaukriPageState(job, maxWaitMs = 12000, updateWidget) {
     const elapsedSec = Math.round((Date.now() - startTime) / 1000);
     if (updateWidget) updateWidget('Scanning Page', Math.min(25 + elapsedSec * 3, 45), `Scanning for apply triggers (${elapsedSec}s)...`);
 
-    // 1. Check if Apply / Interested Button exists on the page FIRST
+    // 0. Check if active chatbot / questionnaire drawer is already open (MUST BE CHECKED FIRST!)
+    const activeInputs = Array.from(document.querySelectorAll('input, textarea')).filter(el => {
+      const type = (el.type || '').toLowerCase();
+      if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'image', 'reset', 'file'].includes(type)) return false;
+      const ph = (el.placeholder || '').toLowerCase();
+      if (ph.includes('search') || el.closest('header, nav, [class*="searchBar"], [class*="header"]')) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 15 && r.height > 10 && r.top > 55;
+    });
+    const activeDrawerOptions = findActiveChatbotOptions();
+    if (activeInputs.length > 0 || activeDrawerOptions.length > 0) {
+      console.log('[HireMind Naukri] Questionnaire drawer already open on page.');
+      return { type: 'chatbot' };
+    }
+
+    // 1. Check if Apply / Interested Button exists on the page
     const applyBtn = findNaukriApplyButton();
     if (applyBtn) {
       return { type: 'apply_button', element: applyBtn };
-    }
-
-    // 2. Check if active chatbot / questionnaire drawer is already open
-    const openOptions = findAllChatbotOptions(document);
-    if (openOptions.length > 0) {
-      return { type: 'chatbot' };
     }
 
     // 3. Check if Already Applied
@@ -1370,18 +1379,18 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
     const activeQuestion = questionNodes.length > 0 ? (questionNodes[questionNodes.length - 1].innerText || '').trim() : '';
     console.log(`[HireMind Naukri] Active question (${turn + 1}): "${activeQuestion}"`);
 
-    // 2. CHECK FOR ALL VISIBLE TEXT / NUMBER / DATE / TEXTAREA INPUTS FIRST (Searches document directly to avoid nesting misses)
+    // 2. CHECK FOR ALL VISIBLE TEXT / NUMBER / DATE / TEXTAREA INPUTS FIRST
     const textInputs = Array.from(document.querySelectorAll('input, textarea, div[contenteditable="true"]')).filter(el => {
       const type = (el.type || '').toLowerCase();
       if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'image', 'reset', 'file'].includes(type)) return false;
+      const ph = (el.placeholder || '').toLowerCase();
+      if (ph.includes('search') || el.closest('header, nav, [class*="searchBar"], [class*="header"]')) return false;
       const r = el.getBoundingClientRect();
       if (r.width <= 15 || r.height <= 10) return false;
+      if (r.top < 55) return false; // Below top header
       const style = window.getComputedStyle(el);
       if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-
-      const inRightDrawer = r.left >= window.innerWidth * 0.38 && r.top >= 50;
-      const inDrawerModal = Boolean(el.closest('[role="dialog"], .modal-content, [class*="drawer"], [class*="Drawer"], [class*="chatbot"], [class*="chatContainer"]'));
-      return inRightDrawer || inDrawerModal;
+      return true;
     });
 
     if (textInputs.length > 0) {

@@ -165,39 +165,58 @@ const HireMindCommon = {
   },
 
   /**
-   * Send message to background service worker
+   * Send message to background service worker with strict timeout protection
    */
-  sendMessage(action, payload = {}) {
+  sendMessage(action, payload = {}, timeoutMs = 3500) {
     return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve({ status: 'timeout' });
+        }
+      }, timeoutMs);
+
       try {
         if (!chrome || !chrome.runtime || !chrome.runtime.id) {
+          clearTimeout(timer);
           return resolve({ status: 'error', error: 'Extension context invalidated' });
         }
         chrome.runtime.sendMessage({ action, ...payload }, (response) => {
-          if (chrome.runtime?.lastError) {
-            resolve({ status: 'error', error: chrome.runtime.lastError.message });
-          } else {
-            resolve(response || { status: 'ok' });
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            if (chrome.runtime?.lastError) {
+              resolve({ status: 'error', error: chrome.runtime.lastError.message });
+            } else {
+              resolve(response || { status: 'ok' });
+            }
           }
         });
       } catch (err) {
-        resolve({ status: 'error', error: err ? err.message : 'Message failed' });
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve({ status: 'error', error: err ? err.message : 'Message failed' });
+        }
       }
     });
   },
 
   /**
-   * Telemetry step logging back to HireMind backend
+   * Telemetry step logging back to HireMind backend (Non-blocking fire-and-forget)
    */
   async logStep(appId, step, progress, statusText, isError = false) {
     console.log(`[HireMind Telemetry] [${progress}%] ${step}: ${statusText}`);
-    return this.sendMessage('LOG_EVENT', {
+    // Fire-and-forget: NEVER block extension automation thread on network telemetry
+    this.sendMessage('LOG_EVENT', {
       appId,
       step,
       progress,
       statusText,
       isError
-    });
+    }, 2000).catch(() => {});
+    return true;
   },
 
   /**
