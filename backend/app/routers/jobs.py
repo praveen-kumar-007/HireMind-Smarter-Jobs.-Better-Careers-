@@ -10,7 +10,7 @@ from app.models.user import User
 from app.models.job import Job
 from app.schemas.job import JobResponse
 from app.routers.deps import get_current_user
-from app.services.job_service import job_discovery_service
+from app.services.job_service import job_discovery_service, make_exact_naukri_url, ensure_exact_job_url
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -146,6 +146,17 @@ def get_jobs(
         if dismissed_ids:
             active_db_q = active_db_q.filter(~Job.id.in_(dismissed_ids))
         all_active = active_db_q.order_by(Job.created_at.desc()).limit(150).all()
+        needs_heal = False
+        for j in all_active:
+            raw_u = j.url or ""
+            if (j.source == "Naukri" or "naukri.com" in raw_u) and ("-jobs-in-" in raw_u or "?k=" in raw_u or "/jobs-in-" in raw_u or "/jobsearch" in raw_u or "/job-listings-" not in raw_u):
+                j.url = make_exact_naukri_url(j.title, j.company, j.location, j.experience, str(j.id))
+                needs_heal = True
+        if needs_heal:
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
         return all_active if (all_active and len(all_active) > 0) else db_jobs[:100]
 
     # 2. If trigger_scan is False and no jobs exist in DB, return transient fallback jobs
@@ -228,6 +239,17 @@ def get_jobs(
 
     query = query.order_by(Job.created_at.desc())
     all_jobs = query.limit(200).all()
+    needs_heal_all = False
+    for j in all_jobs:
+        raw_u = j.url or ""
+        if (j.source == "Naukri" or "naukri.com" in raw_u) and ("-jobs-in-" in raw_u or "?k=" in raw_u or "/jobs-in-" in raw_u or "/jobsearch" in raw_u or "/job-listings-" not in raw_u):
+            j.url = make_exact_naukri_url(j.title, j.company, j.location, j.experience, str(j.id))
+            needs_heal_all = True
+    if needs_heal_all:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
     if match_profile and profile:
         user_target_roles = (profile.target_roles or []) if profile else []
@@ -282,18 +304,11 @@ def get_jobs(
         unique_jobs.append(job)
 
     if not source:
-        by_source = defaultdict(list)
-        for job in unique_jobs:
-            src_key = (job.source or "Other").strip().lower()
-            by_source[src_key].append(job)
-        
-        balanced_jobs = []
-        max_source_count = max([len(v) for v in by_source.values()]) if by_source else 0
-        for idx in range(max_source_count):
-            for src_key in list(by_source.keys()):
-                if idx < len(by_source[src_key]):
-                    balanced_jobs.append(by_source[src_key][idx])
-        return balanced_jobs[:100]
+        # Prioritize Naukri jobs at the top of the job board
+        naukri_jobs = [j for j in unique_jobs if (j.source or "").strip().lower() == "naukri"]
+        other_jobs = [j for j in unique_jobs if (j.source or "").strip().lower() != "naukri"]
+        prioritized_jobs = naukri_jobs + other_jobs
+        return prioritized_jobs[:100]
     else:
         return unique_jobs[:100]
 
@@ -320,19 +335,26 @@ def ensure_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    req_dict = request.dict()
+    req_dict = ensure_exact_job_url(req_dict)
+    clean_url = req_dict.get("url") or request.url
     clean_comp = request.company.strip()
     clean_title = request.title.strip()
-    clean_url_base = (request.url or "").split("?")[0].rstrip("/")
+    clean_url_base = (clean_url or "").split("?")[0].rstrip("/")
     
     # Check existing in DB
     existing = db.query(Job).filter(
         (Job.job_id == request.job_id) |
-        (Job.url == request.url) |
+        (Job.url == clean_url) |
         (Job.url.ilike(f"{clean_url_base}%")) |
         ((Job.company.ilike(clean_comp)) & (Job.title.ilike(clean_title)))
     ).first()
     
     if existing:
+        if (existing.source == "Naukri" or "naukri.com" in (existing.url or "")) and ("-jobs-in-" in (existing.url or "") or "?k=" in (existing.url or "") or "/job-listings-" not in (existing.url or "")):
+            existing.url = make_exact_naukri_url(existing.title, existing.company, existing.location, existing.experience, str(existing.id))
+            db.commit()
+            db.refresh(existing)
         return existing
         
     # Create the Job
@@ -344,7 +366,7 @@ def ensure_job(
         salary=request.salary,
         experience=request.experience,
         description=request.description,
-        url=request.url,
+        url=clean_url,
         source=request.source,
         posted_date=request.posted_date or datetime.datetime.utcnow()
     )

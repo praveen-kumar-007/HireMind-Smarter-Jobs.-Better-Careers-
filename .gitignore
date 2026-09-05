@@ -67,3 +67,4 @@ Thumbs.db
 # Agent/AI platform workspace directories (temporary agent system logs)
 .tempmediaStorage/
 brain/
+*.zip

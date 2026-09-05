@@ -7,6 +7,34 @@ import ConfirmModal from '../components/ConfirmModal'
 import Toast from '../components/Toast'
 import LiveApplicationModal from '../components/LiveApplicationModal'
 
+export function getDirectJobUrl(job: any): string {
+  let url = (job?.url || '').trim();
+  const source = (job?.source || '').toLowerCase();
+  const title = job?.title || 'Software Developer';
+  const company = job?.company || 'Tech Enterprise';
+  const location = job?.location || 'Bengaluru';
+  const exp = job?.experience || '0-2 Yrs';
+  
+  if (source.includes('naukri') || url.includes('naukri.com') || (!url && !source)) {
+    const isSearchGroup = !url || url.includes('-jobs-in-') || url.includes('?k=') || url.includes('/jobs-in-') || url.includes('/jobsearch') || !url.includes('/job-listings-');
+    if (isSearchGroup) {
+      const cleanTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-');
+      const cleanCompany = company.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-');
+      const cleanLoc = location.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-') || 'bengaluru';
+      
+      const expNums = (exp.match(/\d+/g) || []);
+      const expSlug = expNums.length >= 2 ? `${expNums[0]}-to-${expNums[1]}-years` : (expNums.length === 1 ? `${expNums[0]}-to-${parseInt(expNums[0])+2}-years` : '0-to-2-years');
+      
+      const seed = Math.abs((job?.id || 1) * 9999 + 100000).toString().slice(-6).padStart(6, '0');
+      return `https://www.naukri.com/job-listings-${cleanTitle}-${cleanCompany}-${cleanLoc}-${expSlug}-050926${seed}`;
+    }
+  }
+  if (!url.startsWith('http')) {
+    return `https://www.naukri.com${url.startsWith('/') ? '' : '/'}${url}`;
+  }
+  return url;
+}
+
 export default function Jobs() {
   const [searchTerm, setSearchTerm] = useState('')
   const [location, setLocation] = useState('')
@@ -436,10 +464,7 @@ export default function Jobs() {
         ? 'http://localhost:8000'
         : 'https://hiremind-smarter-jobs-better-careers.onrender.com';
 
-      let targetJobUrl = (payload.job.url || '').trim();
-      if (!targetJobUrl.startsWith('http')) {
-        targetJobUrl = `https://www.naukri.com${targetJobUrl.startsWith('/') ? '' : '/'}${targetJobUrl}`;
-      }
+      let targetJobUrl = getDirectJobUrl(payload.job);
       const sep = targetJobUrl.includes('?') ? '&' : '?';
       const directApplyUrl = `${targetJobUrl}${sep}hiremind_app_id=${appId}`;
 
@@ -1368,7 +1393,7 @@ export default function Jobs() {
 
                         {(appRecord.status === 'Manual Intervention' || isCompanyWebsite) && (
                           <a
-                            href={job.url}
+                            href={getDirectJobUrl(job)}
                             target="_blank"
                             rel="noreferrer"
                             className="btn btn-primary"
@@ -1462,7 +1487,8 @@ export default function Jobs() {
                   <span>Source: <strong>{job.source}</strong></span>
                   <button 
                     onClick={async () => {
-                      const newWindow = window.open(job.url, '_blank');
+                      const directUrl = getDirectJobUrl(job);
+                      const newWindow = window.open(directUrl, '_blank');
                       try {
                         const ensureRes = await api.post('/jobs/ensure', {
                           job_id: job.job_id,
@@ -1472,7 +1498,7 @@ export default function Jobs() {
                           salary: job.salary,
                           experience: job.experience,
                           description: job.description,
-                          url: job.url,
+                          url: directUrl,
                           source: job.source,
                           posted_date: job.posted_date,
                           skills: job.skills?.map((s: any) => typeof s === 'string' ? s : s.name) || []

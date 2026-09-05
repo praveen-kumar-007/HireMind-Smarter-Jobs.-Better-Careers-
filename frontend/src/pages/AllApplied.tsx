@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import OutreachEmailModal from '../components/OutreachEmailModal'
 import BulkOutreachModal from '../components/BulkOutreachModal'
+import { getDirectJobUrl } from './Jobs'
 
 export default function AllApplied() {
   const [filterText, setFilterText] = useState('')
@@ -484,7 +485,7 @@ export default function AllApplied() {
 
                       {app.job?.url && (
                         <a
-                          href={app.job.url}
+                          href={getDirectJobUrl(app.job)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="btn btn-secondary"
