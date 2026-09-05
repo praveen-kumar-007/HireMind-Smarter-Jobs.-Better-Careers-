@@ -109,6 +109,21 @@
  */
 async function runNaukriAutomation(appId, job, candidate, resumeData, updateWidget) {
   const currentUrl = window.location.href.toLowerCase();
+
+  // Step 0: Auto-recover if currently on walkInApply incomplete application page
+  if (currentUrl.includes('walkinapply') || (document.body.innerText || '').includes('Your application was not accepted due to incomplete information')) {
+    console.log('[HireMind Naukri] On incomplete application page. Auto-navigating back to job listing to re-apply properly...');
+    updateWidget('Recovering Application', 20, 'Retrying application with filled screening answers...');
+    const match = currentUrl.match(/strjobsarr=(?:%5b|\[)?([0-9a-zA-Z]+)(?:%5d|\])?/i) || currentUrl.match(/([0-9]{12})/);
+    if (match && match[1]) {
+      const jobId = match[1];
+      const targetUrl = `https://www.naukri.com/job-listings-${jobId}?hiremind_app_id=${appId}`;
+      console.log(`[HireMind Naukri] Redirecting to direct job page: ${targetUrl}`);
+      window.location.href = targetUrl;
+      return;
+    }
+  }
+
   const isCampusPortal = currentUrl.includes('/homepage') || currentUrl.includes('/mnjuser') || currentUrl.includes('/campus');
 
   // Step 1: Detect Search Results aggregation / listing pages (-jobs-in-, ?k=, /jobs-in-)
@@ -729,13 +744,18 @@ function getNaukriDrawerContainer() {
     }
   }
 
-  // Fallback: search for right-side container with chatbot inputs or bubbles
+  // Fallback: search for right-side container with chatbot inputs or bubbles (sort by area descending)
   const candidates = Array.from(document.querySelectorAll('div, section, aside')).filter(el => {
     const r = el.getBoundingClientRect();
-    return r.width > 240 && r.height > 300 && r.left >= window.innerWidth * 0.45 && r.top <= 120;
+    return r.width > 240 && r.height > 300 && r.left >= window.innerWidth * 0.38 && r.top <= 120;
   });
   if (candidates.length > 0) {
-    return candidates[candidates.length - 1];
+    candidates.sort((a, b) => {
+      const areaA = a.getBoundingClientRect().width * a.getBoundingClientRect().height;
+      const areaB = b.getBoundingClientRect().width * b.getBoundingClientRect().height;
+      return areaB - areaA;
+    });
+    return candidates[0];
   }
   return null;
 }
@@ -1335,35 +1355,37 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
 
     await HireMindCommon.delay(700);
 
-    const drawer = getNaukriDrawerContainer();
-    const searchRoot = drawer || document;
-
-    // 1. Extract active question text from drawer (ignoring header nav / buttons)
-    const questionNodes = Array.from(searchRoot.querySelectorAll('p, div, span, h2, h3, h4, h5, label')).filter(el => {
+    // 1. Extract active question text across right-side drawer/modal bubbles
+    const questionNodes = Array.from(document.querySelectorAll('p, div, span, h2, h3, h4, h5, label')).filter(el => {
       const t = (el.innerText || '').trim();
       const tLower = t.toLowerCase();
       if (t.length < 4 || t.length > 300) return false;
       if (tLower.includes('thank you for showing') || tLower.includes('kindly answer') || tLower.includes('grievance') || tLower.includes('download') || tLower.includes('participate') || tLower.includes('prepare')) return false;
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && r.left >= window.innerWidth * 0.45 && r.top >= 60;
+      const inRightDrawer = (r.left >= window.innerWidth * 0.38 && r.top >= 60);
+      const inDrawerModal = Boolean(el.closest('[role="dialog"], .modal-content, [class*="drawer"], [class*="Drawer"], [class*="chatbot"]'));
+      return r.width > 0 && r.height > 0 && (inRightDrawer || inDrawerModal);
     });
 
     const activeQuestion = questionNodes.length > 0 ? (questionNodes[questionNodes.length - 1].innerText || '').trim() : '';
     console.log(`[HireMind Naukri] Active question (${turn + 1}): "${activeQuestion}"`);
 
-    // 2. CHECK FOR TEXT INPUTS / TEXTAREAS / DATES FIRST (Crucial: prevents skipping text inputs!)
-    const textInputs = Array.from(searchRoot.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], input:not([type]), textarea, div[contenteditable="true"]')).filter(el => {
+    // 2. CHECK FOR ALL VISIBLE TEXT / NUMBER / DATE / TEXTAREA INPUTS FIRST (Searches document directly to avoid nesting misses)
+    const textInputs = Array.from(document.querySelectorAll('input, textarea, div[contenteditable="true"]')).filter(el => {
+      const type = (el.type || '').toLowerCase();
+      if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'image', 'reset', 'file'].includes(type)) return false;
       const r = el.getBoundingClientRect();
+      if (r.width <= 15 || r.height <= 10) return false;
       const style = window.getComputedStyle(el);
-      if (r.width <= 20 || r.height <= 10) return false;
       if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-      // Must be inside the right drawer and below top navbar
-      if (r.left < window.innerWidth * 0.45 || r.top < 65) return false;
-      return true;
+
+      const inRightDrawer = r.left >= window.innerWidth * 0.38 && r.top >= 50;
+      const inDrawerModal = Boolean(el.closest('[role="dialog"], .modal-content, [class*="drawer"], [class*="Drawer"], [class*="chatbot"], [class*="chatContainer"]'));
+      return inRightDrawer || inDrawerModal;
     });
 
     if (textInputs.length > 0) {
-      console.log(`[HireMind Naukri] Found ${textInputs.length} input field(s) for active question.`);
+      console.log(`[HireMind Naukri] Found ${textInputs.length} input field(s) in screening drawer.`);
       for (const textInput of textInputs) {
         const inputId = (textInput.id || '').toLowerCase();
         const inputName = (textInput.name || '').toLowerCase();
@@ -1374,26 +1396,31 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
         let answer = '';
 
         // Case A: CTC / Salary Question (Strictly applying user rules)
-        const isCTC = fullCtx.includes('ctc') || fullCtx.includes('salary') || fullCtx.includes('compensation') || fullCtx.includes('lpa') || fullCtx.includes('lacs') || fullCtx.includes('lakhs') || inputPlaceholder.includes('lakh') || inputPlaceholder.includes('lac');
+        const isCTC = fullCtx.includes('ctc') || fullCtx.includes('salary') || fullCtx.includes('compensation') || fullCtx.includes('lpa') || fullCtx.includes('lacs') || fullCtx.includes('lakhs') || inputPlaceholder.includes('lakh') || inputPlaceholder.includes('lac') || inputPlaceholder.includes('ctc') || inputPlaceholder.includes('salary');
         if (isCTC) {
+          const pageText = (document.body.innerText || '').toLowerCase();
           const jobExpStr = ((job.experience || '') + ' ' + (job.title || '')).toLowerCase();
           const candExpYears = Number(candidate.experience_years || 0);
-          const isFresher = candExpYears <= 1 || jobExpStr.includes('0-1') || jobExpStr.includes('0 - 1') || jobExpStr.includes('0-2') || jobExpStr.includes('0 to 1') || jobExpStr.includes('fresher') || jobExpStr.includes('intern');
+
+          // Fresher check: 0-1 yrs or entry-level keywords
+          const isFresher = candExpYears <= 1 && (jobExpStr.includes('0-1') || jobExpStr.includes('0 - 1') || jobExpStr.includes('0 to 1') || jobExpStr.includes('fresher') || jobExpStr.includes('intern') || pageText.includes('0-1 yrs') || pageText.includes('0 - 1 yrs') || pageText.includes('fresher'));
           const asksInLacs = fullCtx.includes('lacs') || fullCtx.includes('lakhs') || fullCtx.includes('lpa') || inputPlaceholder.includes('lakh') || inputPlaceholder.includes('lac');
 
           if (isFresher) {
-            // User rule: "if job is for fresher with 0-1 yrs experience write there NA or 1"
-            if (inputType === 'number') {
+            // User rule: "if job is for fresher with with 0-1 yrs experience write there NA or 1"
+            if (inputType === 'number' || asksInLacs) {
               answer = '1';
             } else {
-              answer = asksInLacs ? '1' : 'NA';
+              answer = 'NA';
             }
           } else {
             // User rule: "if for experience more than 2 year write 3.5LPA or 300000"
             if (inputType === 'number') {
               answer = asksInLacs ? '3.5' : '300000';
+            } else if (asksInLacs) {
+              answer = '3.5 LPA';
             } else {
-              answer = asksInLacs ? '3.5 LPA' : '300000';
+              answer = '300000';
             }
           }
         }
@@ -1407,7 +1434,7 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
         }
         // Case C: Experience Question
         else if (fullCtx.includes('total experience') || fullCtx.includes('years of experience') || fullCtx.includes('experience in years') || fullCtx.includes('how many years')) {
-          answer = String(candidate.experience_years || 2);
+          answer = inputType === 'number' ? String(candidate.experience_years || 2) : `${candidate.experience_years || 2} years`;
         }
         // Case D: Notice Period
         else if (fullCtx.includes('notice period') || fullCtx.includes('how soon') || fullCtx.includes('notice')) {
@@ -1442,7 +1469,18 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
         console.log(`[HireMind Naukri] Filling text input with: "${answer}"`);
         updateWidget('Filling Answer', Math.min(72 + turn * 2, 94), `Answer: "${answer}"`);
         await HireMindCommon.humanType(textInput, answer);
-        await HireMindCommon.delay(300);
+        await HireMindCommon.delay(350);
+      }
+
+      // Verify all inputs have values
+      const stillEmpty = textInputs.filter(inp => (!inp.value || inp.value.trim().length === 0) && inp.tagName !== 'BUTTON');
+      if (stillEmpty.length > 0) {
+        console.warn(`[HireMind Naukri] ${stillEmpty.length} input(s) still empty after typing! Retrying typing...`);
+        for (const emptyInp of stillEmpty) {
+          emptyInp.value = '3.5';
+          emptyInp.dispatchEvent(new Event('input', { bubbles: true }));
+          emptyInp.dispatchEvent(new Event('change', { bubbles: true }));
+        }
       }
 
       // Click Save after filling inputs
@@ -1455,9 +1493,11 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
     }
 
     // 3. CHECK FOR CHECKBOXES
-    const checkboxes = Array.from(searchRoot.querySelectorAll('input[type="checkbox"], div[role="checkbox"]')).filter(el => {
+    const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"], div[role="checkbox"]')).filter(el => {
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && r.left >= window.innerWidth * 0.45 && r.top >= 65;
+      const inRightDrawer = r.left >= window.innerWidth * 0.38 && r.top >= 50;
+      const inDrawerModal = Boolean(el.closest('[role="dialog"], .modal-content, [class*="drawer"], [class*="Drawer"], [class*="chatbot"]'));
+      return r.width > 0 && r.height > 0 && (inRightDrawer || inDrawerModal);
     });
     if (checkboxes.length > 0) {
       let checkedAny = false;
@@ -1503,9 +1543,11 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
     }
 
     // 5. CHECK FOR HTML <select> DROPDOWNS
-    const selectElements = Array.from(searchRoot.querySelectorAll('select')).filter(el => {
+    const selectElements = Array.from(document.querySelectorAll('select')).filter(el => {
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && !el.disabled && r.left >= window.innerWidth * 0.45 && r.top >= 65;
+      const inRightDrawer = r.left >= window.innerWidth * 0.38 && r.top >= 50;
+      const inDrawerModal = Boolean(el.closest('[role="dialog"], .modal-content, [class*="drawer"], [class*="Drawer"], [class*="chatbot"]'));
+      return r.width > 0 && r.height > 0 && !el.disabled && (inRightDrawer || inDrawerModal);
     });
     if (selectElements.length > 0) {
       for (const selectEl of selectElements) {
@@ -1523,7 +1565,23 @@ async function handleNaukriChatbot(appId, job, candidate, resumeData, updateWidg
       continue;
     }
 
-    // 6. If no active input/option was matched, try clicking Save if available
+    // 6. If no active input/option was matched, ONLY click Save IF NO unfilled inputs exist on screen!
+    const unfilledOnScreen = Array.from(document.querySelectorAll('input, textarea')).filter(el => {
+      const type = (el.type || '').toLowerCase();
+      if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'image', 'reset', 'file'].includes(type)) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 15 || r.height <= 10) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      const inRightDrawer = r.left >= window.innerWidth * 0.38 && r.top >= 50;
+      return inRightDrawer && (!el.value || el.value.trim().length === 0);
+    });
+
+    if (unfilledOnScreen.length > 0) {
+      console.warn(`[HireMind Naukri] Found ${unfilledOnScreen.length} unfilled input(s) on screen. Will NOT click Save until filled!`);
+      continue;
+    }
+
     const saveClicked = await clickDrawerSaveButton();
     if (saveClicked) {
       await HireMindCommon.delay(1500);

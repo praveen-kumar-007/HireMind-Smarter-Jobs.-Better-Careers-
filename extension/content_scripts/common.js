@@ -23,50 +23,66 @@ const HireMindCommon = {
    */
   async humanType(element, text) {
     if (!element) return;
-    const strText = String(text !== undefined && text !== null ? text : '');
+    let strText = String(text !== undefined && text !== null ? text : '');
+    
+    // If number input or numeric mode, sanitize to numbers & decimals only
+    const inputType = (element.type || '').toLowerCase();
+    const isNumeric = inputType === 'number' || element.getAttribute('inputmode') === 'numeric';
+    if (isNumeric) {
+      strText = strText.replace(/[^0-9.]/g, '');
+      if (!strText) strText = '1';
+    }
+
     try {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      await this.delay(100);
+      await this.delay(80);
       element.focus();
       element.click();
-      await this.delay(80);
+      await this.delay(60);
 
-      // React controlled input helper: invoke prototype value setter to trigger internal tracker
+      // 1. Reset React internal value tracker if present
+      if (element._valueTracker) {
+        element._valueTracker.setValue('');
+      }
+
+      // 2. Use native prototype descriptor setter to trigger React 17/18 synthetic change listeners
       const proto = element.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
       const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
 
       if (nativeSetter) {
-        nativeSetter.call(element, '');
+        nativeSetter.call(element, strText);
       } else {
-        element.value = '';
+        element.value = strText;
       }
-      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.value = strText;
 
-      // Type each character or set value
-      if (strText.length > 60) {
-        if (nativeSetter) {
-          nativeSetter.call(element, strText);
-        } else {
-          element.value = strText;
-        }
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-        element.dispatchEvent(new Event('change', { bubbles: true }));
-      } else {
-        let current = '';
-        for (let i = 0; i < strText.length; i++) {
-          current += strText[i];
-          if (nativeSetter) {
-            nativeSetter.call(element, current);
-          } else {
-            element.value = current;
-          }
+      // 3. Dispatch full event suite
+      element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      try {
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: strText }));
+      } catch (e) {}
+      element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+      // 4. Dispatch keydown / keyup
+      element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+      element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+
+      // 5. Blur to trigger form validation
+      element.dispatchEvent(new Event('blur', { bubbles: true, composed: true }));
+      await this.delay(120);
+
+      // 6. Verification fallback: If text contains letters and element stripped it to empty (e.g. custom numeric mask)
+      if (!element.value || element.value.trim().length === 0) {
+        const fallbackNum = strText.replace(/[^0-9.]/g, '');
+        if (fallbackNum) {
+          console.warn(`[HireMind Common] Input was empty after typing "${strText}". Fallback typing numeric "${fallbackNum}"...`);
+          if (nativeSetter) nativeSetter.call(element, fallbackNum);
+          element.value = fallbackNum;
           element.dispatchEvent(new Event('input', { bubbles: true }));
-          await this.delay(15);
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+          element.dispatchEvent(new Event('blur', { bubbles: true }));
         }
-        element.dispatchEvent(new Event('change', { bubbles: true }));
       }
-      element.dispatchEvent(new Event('blur', { bubbles: true }));
-      await this.delay(100);
     } catch (err) {
       console.warn('[HireMind Common] Type error:', err);
       try {
