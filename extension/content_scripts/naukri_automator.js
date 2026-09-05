@@ -165,9 +165,35 @@ async function runNaukriAutomation(appId, job, candidate, resumeData, updateWidg
     return;
   }
 
-  // Case B: Job Expired — permanently delete from DB
+  // Case B: Job Expired — Check if Naukri provided similar active jobs below the expired banner
   if (pageState.type === 'expired') {
-    console.log('[HireMind] Job is expired on Naukri. Permanently removing from database.');
+    console.log('[HireMind] Expired banner detected. Checking for active similar jobs on page...');
+    const similarCards = Array.from(document.querySelectorAll('.cust-job-tuple, article, .srp-jobtuple-wrapper, div[class*="tuple"], a.title'))
+      .filter(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 60 && r.height > 20;
+      });
+
+    if (similarCards.length > 0) {
+      console.log(`[HireMind] Found ${similarCards.length} similar active job openings. Auto-selecting active listing...`);
+      updateWidget('Active Alternative', 30, 'Redirecting to matching active opening...');
+      await HireMindCommon.logStep(appId, 'Selecting Active Alternative', 30, `Selecting top matching active job from live recommendations...`);
+      
+      const targetCard = similarCards[0];
+      const link = targetCard.tagName === 'A' ? targetCard : targetCard.querySelector('a.title, a[class*="title"], a[href*="job-listings"]');
+      if (link && link.getAttribute('href')) {
+        const rawHref = link.getAttribute('href');
+        const fullHref = rawHref.startsWith('http') ? rawHref : `https://www.naukri.com${rawHref.startsWith('/') ? '' : '/'}${rawHref}`;
+        const sep = fullHref.includes('?') ? '&' : '?';
+        window.location.href = `${fullHref}${sep}hiremind_app_id=${appId}`;
+        return;
+      } else {
+        await HireMindCommon.humanClick(targetCard);
+        return;
+      }
+    }
+
+    console.log('[HireMind] Job is expired and no alternatives found. Removing from database.');
     updateWidget('Job Expired', 100, 'This job has expired. Removing from your board...');
     await HireMindCommon.logStep(appId, 'Job Expired', 100, `Listing for '${job.title}' is expired on Naukri. Permanently removing.`);
     try {

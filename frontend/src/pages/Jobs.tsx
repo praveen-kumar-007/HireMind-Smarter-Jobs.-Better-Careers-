@@ -11,28 +11,35 @@ export function getDirectJobUrl(job: any): string {
   let url = (job?.url || '').trim();
   const source = (job?.source || '').toLowerCase();
   const title = job?.title || 'Software Developer';
-  const company = job?.company || 'Tech Enterprise';
-  const location = job?.location || 'Bengaluru';
-  const exp = job?.experience || '0-2 Yrs';
+  const location = job?.location || 'India';
   
   if (source.includes('naukri') || url.includes('naukri.com') || (!url && !source)) {
-    const isSearchGroup = !url || url.includes('-jobs-in-') || url.includes('?k=') || url.includes('/jobs-in-') || url.includes('/jobsearch') || !url.includes('/job-listings-');
-    if (isSearchGroup) {
-      const cleanTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-');
-      const cleanCompany = company.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-');
-      const cleanLoc = location.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-') || 'bengaluru';
-      
-      const expNums = (exp.match(/\d+/g) || []);
-      const expSlug = expNums.length >= 2 ? `${expNums[0]}-to-${expNums[1]}-years` : (expNums.length === 1 ? `${expNums[0]}-to-${parseInt(expNums[0])+2}-years` : '0-to-2-years');
-      
-      const seed = Math.abs((job?.id || 1) * 9999 + 100000).toString().slice(-6).padStart(6, '0');
-      return `https://www.naukri.com/job-listings-${cleanTitle}-${cleanCompany}-${cleanLoc}-${expSlug}-050926${seed}`;
+    // If it's already an unexpired direct job-listings URL, return it directly
+    if (url && url.includes('/job-listings-')) {
+      if (!url.startsWith('http')) {
+        return `https://www.naukri.com${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      return url;
     }
+    
+    // If it is a valid search URL or category URL, keep it clean
+    if (url && (url.includes('-jobs-in-') || url.includes('?k=') || url.includes('/jobs-in-'))) {
+      if (!url.startsWith('http')) {
+        return `https://www.naukri.com${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      return url;
+    }
+    
+    // Otherwise construct a clean, valid Naukri search URL that loads live jobs without ?expJD=true
+    const cleanTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-');
+    const cleanLoc = location.replace(/[^a-zA-Z0-9\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-') || 'india';
+    return `https://www.naukri.com/${cleanTitle}-jobs-in-${cleanLoc}?k=${encodeURIComponent(title)}`;
   }
-  if (!url.startsWith('http')) {
+  
+  if (url && !url.startsWith('http')) {
     return `https://www.naukri.com${url.startsWith('/') ? '' : '/'}${url}`;
   }
-  return url;
+  return url || 'https://www.naukri.com';
 }
 
 export default function Jobs() {
